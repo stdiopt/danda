@@ -3,7 +3,6 @@ package psql
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"fmt"
 	"reflect"
 	"time"
@@ -23,7 +22,7 @@ var Dialect = &psql{}
 
 type psql struct{}
 
-func (p *psql) TableDef(ctx context.Context, db *sql.DB, name string) (Table, error) {
+func (p *psql) TableDef(ctx context.Context, q etlsql.SQLQuery, name string) (Table, error) {
 	tableQry := fmt.Sprintf(`
 			SELECT count(table_name) 
 			FROM information_schema.tables 
@@ -31,7 +30,7 @@ func (p *psql) TableDef(ctx context.Context, db *sql.DB, name string) (Table, er
 				AND table_name = '%s'`,
 		name,
 	)
-	row := db.QueryRowContext(ctx, tableQry)
+	row := q.QueryRowContext(ctx, tableQry)
 	var c int
 	if err := row.Scan(&c); err != nil {
 		return Table{}, err
@@ -42,7 +41,7 @@ func (p *psql) TableDef(ctx context.Context, db *sql.DB, name string) (Table, er
 
 	// Load table schema here
 	qry := fmt.Sprintf("SELECT * FROM %s LIMIT 0", name)
-	rows, err := db.QueryContext(ctx, qry)
+	rows, err := q.QueryContext(ctx, qry)
 	if err != nil {
 		return Table{}, fmt.Errorf("selecting table: %w", err)
 	}
@@ -67,7 +66,7 @@ func (p *psql) TableDef(ctx context.Context, db *sql.DB, name string) (Table, er
 	return ret, nil
 }
 
-func (p *psql) CreateTable(ctx context.Context, db *sql.DB, name string, def dialect.Table) error {
+func (p *psql) CreateTable(ctx context.Context, q etlsql.SQLExec, name string, def dialect.Table) error {
 	// Create statement
 	params := []any{}
 	qry := &bytes.Buffer{}
@@ -86,23 +85,17 @@ func (p *psql) CreateTable(ctx context.Context, db *sql.DB, name string, def dia
 	}
 	qry.WriteString(")\n")
 
-	_, err := db.ExecContext(ctx, qry.String(), params...)
+	_, err := q.ExecContext(ctx, qry.String(), params...)
 	if err != nil {
 		return fmt.Errorf("createTable failed: %w: %v", err, qry.String())
 	}
 	return nil
 }
 
-func (p *psql) AddColumns(ctx context.Context, db *sql.DB, name string, def dialect.Table) error {
+func (p *psql) AddColumns(ctx context.Context, q etlsql.SQLExec, name string, def dialect.Table) error {
 	if len(def.Columns) == 0 {
 		return nil
 	}
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	// will commit if no error
-	defer tx.Rollback() // nolint: errcheck
 
 	for _, col := range def.Columns {
 		sqlType, err := p.columnSQLTypeName(col)
@@ -118,15 +111,15 @@ func (p *psql) AddColumns(ctx context.Context, db *sql.DB, name string, def dial
 			col.Name, sqlType,
 		)
 
-		_, err = db.ExecContext(ctx, qry)
+		_, err = q.ExecContext(ctx, qry)
 		if err != nil {
 			return fmt.Errorf("addColumns failed: %w", err)
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
-func (p *psql) Insert(ctx context.Context, db *sql.DB, name string, rows []etlsql.Row) error {
+func (p *psql) Insert(ctx context.Context, q etlsql.SQLExec, name string, rows []etlsql.Row) error {
 	def := dialect.FromRows(rows)
 
 	qryBuf := &bytes.Buffer{}
@@ -149,7 +142,7 @@ func (p *psql) Insert(ctx context.Context, db *sql.DB, name string, rows []etlsq
 	//
 	params := def.RowValues(rows)
 
-	_, err := db.ExecContext(ctx, qryBuf.String(), params...)
+	_, err := q.ExecContext(ctx, qryBuf.String(), params...)
 	return err
 }
 

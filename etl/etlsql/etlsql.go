@@ -14,11 +14,19 @@ type (
 	Iter = etl.Iter
 )
 
+type SQLQuery interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+type SQLExec interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 type Dialect interface {
-	TableDef(ctx context.Context, db *sql.DB, name string) (dialect.Table, error)
-	CreateTable(ctx context.Context, db *sql.DB, name string, table dialect.Table) error
-	AddColumns(ctx context.Context, db *sql.DB, name string, table dialect.Table) error
-	Insert(ctx context.Context, db *sql.DB, name string, rows []Row) error
+	TableDef(ctx context.Context, db SQLQuery, name string) (dialect.Table, error)
+	CreateTable(ctx context.Context, db SQLExec, name string, table dialect.Table) error
+	AddColumns(ctx context.Context, db SQLExec, name string, table dialect.Table) error
+	Insert(ctx context.Context, db SQLExec, name string, rows []Row) error
 }
 
 type DB struct {

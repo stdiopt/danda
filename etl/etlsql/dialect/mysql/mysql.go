@@ -3,7 +3,6 @@ package mysql
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"fmt"
 	"reflect"
 	"time"
@@ -23,7 +22,7 @@ var Dialect = &mysql{}
 
 type mysql struct{}
 
-func (d *mysql) TableDef(ctx context.Context, db *sql.DB, name string) (Table, error) {
+func (d *mysql) TableDef(ctx context.Context, db etlsql.SQLQuery, name string) (Table, error) {
 	tableQry := fmt.Sprintf(`
 			SELECT count(table_name) 
 			FROM information_schema.tables 
@@ -67,7 +66,7 @@ func (d *mysql) TableDef(ctx context.Context, db *sql.DB, name string) (Table, e
 	return ret, nil
 }
 
-func (d *mysql) CreateTable(ctx context.Context, db *sql.DB, name string, def dialect.Table) error {
+func (d *mysql) CreateTable(ctx context.Context, db etlsql.SQLExec, name string, def dialect.Table) error {
 	// Create statement
 	params := []any{}
 	qry := &bytes.Buffer{}
@@ -93,17 +92,10 @@ func (d *mysql) CreateTable(ctx context.Context, db *sql.DB, name string, def di
 	return nil
 }
 
-func (p *mysql) AddColumns(ctx context.Context, db *sql.DB, name string, def dialect.Table) error {
+func (p *mysql) AddColumns(ctx context.Context, db etlsql.SQLExec, name string, def dialect.Table) error {
 	if len(def.Columns) == 0 {
 		return nil
 	}
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	// will commit if no error
-	defer tx.Rollback() // nolint: errcheck
-
 	for _, col := range def.Columns {
 		ftyp := col.Type
 		sqlType, err := p.columnSQLTypeName(ftyp)
@@ -122,10 +114,10 @@ func (p *mysql) AddColumns(ctx context.Context, db *sql.DB, name string, def dia
 			return fmt.Errorf("addColumns failed: %w", err)
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
-func (p *mysql) Insert(ctx context.Context, db *sql.DB, name string, rows []etlsql.Row) error {
+func (p *mysql) Insert(ctx context.Context, db etlsql.SQLExec, name string, rows []etlsql.Row) error {
 	def := dialect.FromRows(rows)
 
 	qryBuf := &bytes.Buffer{}
