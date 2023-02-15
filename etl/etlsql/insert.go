@@ -117,6 +117,13 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 		}
 		defer tx.Rollback()
 
+		// Exceptional case, we attept to reload the table under the transaction if columns are empty.
+		if len(tableDef.Columns) == 0 {
+			tableDef, err = d.dialect.TableDef(ctx, tx, table)
+			if err != nil {
+				return err
+			}
+		}
 		// DDLSync
 		if missing := def.MissingOn(tableDef); missing.Len() > 0 {
 			if len(tableDef.Columns) == 0 {
