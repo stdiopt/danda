@@ -106,7 +106,7 @@ func (p *psql) AddColumns(ctx context.Context, q etlsql.SQLExec, name string, de
 		// in this case we allow null since we're adding a column
 		qry := fmt.Sprintf(`
 			ALTER TABLE "%s"
-			ADD COLUMN IF NOT EXISTS "%s" %s`,
+			ADD COLUMN "%s" %s`,
 			name,
 			col.Name, sqlType,
 		)
