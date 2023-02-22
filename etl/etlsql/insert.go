@@ -14,7 +14,7 @@ type DDLSync int
 const (
 	DDLNone DDLSync = iota
 	DDLCreate
-	DDLAlter
+	DDLAddColumns
 )
 
 type insertOptions struct {
@@ -89,8 +89,7 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 		def := dialect.FromRows(rows)
 		for i, c := range def.Columns {
 			if opt.typeOverride != nil {
-				t := opt.typeOverride(c)
-				if t != "" {
+				if t := opt.typeOverride(c); t != "" {
 					def.Columns[i].SQLType = t
 				}
 			}
@@ -134,7 +133,7 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 					return err
 				}
 				tableDef = def
-			} else if opt.ddlSync == DDLAlter {
+			} else if opt.ddlSync == DDLAddColumns {
 				if err := d.dialect.AddColumns(ctx, tx, table, missing); err != nil {
 					return err
 				}
