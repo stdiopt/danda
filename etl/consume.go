@@ -86,3 +86,19 @@ func Print(it Iter) error {
 		return nil
 	})
 }
+
+// Count consumes the iterator and return the number of iterations.
+func Count(it Iter) (int, error) {
+	ctx := context.Background()
+	var n int
+	for {
+		_, err := it.Next(ctx)
+		if err == io.EOF {
+			return n, nil
+		}
+		if err != nil {
+			return 0, err
+		}
+		n++
+	}
+}
