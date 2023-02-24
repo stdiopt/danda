@@ -2,7 +2,9 @@ package etlparquet
 
 import (
 	"bytes"
+	"fmt"
 	"io"
+	"log"
 	"os"
 	"reflect"
 	"time"
@@ -47,7 +49,7 @@ func DecodeFile[T any](it Iter) Iter {
 	})
 }
 
-// Decode decodes and unmarshal parquet data into T
+// Decode decodes and unmarshal []byte from 'iter' into T
 func Decode[T any](it Iter) Iter {
 	return etl.MakeGen(etl.Gen[T]{
 		Run: func(yield etl.Y[T]) error {
@@ -68,7 +70,7 @@ func Decode[T any](it Iter) Iter {
 				var v T
 				switch any(v).(type) {
 				case drow.Row:
-					du := &drowUnmarshaller{def, nil}
+					du := &drowUnmarshaler{def, nil}
 					if err := fr.Scan(du); err != nil {
 						return err
 					}
@@ -88,28 +90,54 @@ func Decode[T any](it Iter) Iter {
 	})
 }
 
-// Encode receives a T and outputs encoded parquet in []byte
-// Add drow support
-func Encode[T any](it Iter) Iter {
+// Encode returns a new iterator that will iterate over encoded parquet []byte
+// data, it creates the schema based on the first received value.
+func Encode(it Iter) Iter {
+	runner := func(yield etl.Y[[]byte]) error {
+		var pw *goparquet.FileWriter
+		var fw *floor.Writer
+		defer func() {
+			if fw != nil {
+				fw.Close()
+			}
+			if pw != nil {
+				pw.Close()
+			}
+		}()
+		return etl.Consume(it, func(v any) error {
+			if pw == nil {
+				schema, err := schemaFrom(v)
+				if err != nil {
+					return err
+				}
+				log.Println("Schema:", schema)
+				w := etlio.YieldWriter(yield)
+				pw = goparquet.NewFileWriter(w,
+					goparquet.WithSchemaDefinition(schema),
+					goparquet.WithCompressionCodec(parquet.CompressionCodec_SNAPPY),
+				)
+				fw = floor.NewWriter(pw)
+			}
+			switch v := v.(type) {
+			case drow.Row:
+				return fw.Write(&drowMarshaler{v})
+			default:
+				return fw.Write(v)
+			}
+		})
+	}
 	return etl.MakeGen(etl.Gen[[]byte]{
-		Run: func(yield etl.Y[[]byte]) error {
-			w := etlio.YieldWriter(yield)
-			pw := goparquet.NewFileWriter(w,
-				goparquet.WithSchemaDefinition(schemaFrom(*new(T))),
-				goparquet.WithCompressionCodec(parquet.CompressionCodec_SNAPPY),
-			)
-			defer pw.Close()
-			fw := floor.NewWriter(pw)
-			defer fw.Close()
-
-			return etl.Consume(it, fw.Write)
-		},
+		Run:   runner,
 		Close: it.Close,
 	})
 }
 
 // Build schema definition from reflection
-func schemaFrom(v interface{}) *parquetschema.SchemaDefinition {
+func schemaFrom(v interface{}) (*parquetschema.SchemaDefinition, error) {
+	if r, ok := v.(drow.Row); ok {
+		log.Println("It is drow")
+		return drowSchemaFrom(r)
+	}
 	val := reflect.Indirect(reflect.ValueOf(v))
 	typ := val.Type()
 
@@ -155,7 +183,7 @@ func schemaFrom(v interface{}) *parquetschema.SchemaDefinition {
 			}
 		case reflect.Slice:
 			if ityp.Elem().Kind() != reflect.Uint8 {
-				panic("wrong type")
+				return nil, fmt.Errorf("unsupported type %v", ityp)
 			}
 
 			ptyp = parquet.Type_BYTE_ARRAY
@@ -167,7 +195,7 @@ func schemaFrom(v interface{}) *parquetschema.SchemaDefinition {
 			// regular slice
 		case reflect.Struct:
 			if ityp != reflect.TypeOf(time.Time{}) {
-				panic("only type supported for now")
+				return nil, fmt.Errorf("unsupported type %v", ityp)
 			}
 			ptyp = parquet.Type_INT64
 			logTyp = &parquet.LogicalType{
@@ -190,48 +218,5 @@ func schemaFrom(v interface{}) *parquetschema.SchemaDefinition {
 		}
 		root.RootColumn.Children = append(root.RootColumn.Children, col)
 	}
-	return root
+	return root, nil
 }
-
-// generate schema from iface, using message maybe using Schema struct directly.
-/*func withSchema(v interface{}) parquetgo.FileWriterOption {
-
-	log.Printf("For type: %T", v)
-	val := reflect.Indirect(reflect.ValueOf(v))
-	typ := val.Type()
-
-	sb := &strings.Builder{}
-	fmt.Fprintf(sb, "message %s {\n", typ.Name())
-	for i := 0; i < typ.NumField(); i++ {
-		ftyp := typ.Field(i)
-		t, ok := ftyp.Tag.Lookup("parquet")
-		if !ok {
-			continue
-		}
-		pty := "binary"
-		name := t
-		xtra := ""
-		vi := val.Field(i).Interface()
-		switch vi.(type) {
-		case int, int32:
-			pty = "int32"
-		case int64:
-			pty = "int64"
-		case string:
-			pty = "binary"
-			xtra = "(STRING)"
-		case time.Time:
-			pty = "int64"
-			xtra = "(TIMESTAMP(NANOS,true))"
-		}
-		fmt.Fprintf(sb, "\trequired %s %s %s;\n", pty, name, xtra)
-	}
-	fmt.Fprint(sb, "}\n")
-
-	log.Println("Res:", sb.String())
-	s, err := parquetschema.ParseSchemaDefinition(sb.String())
-	if err != nil {
-		panic(err)
-	}
-	return parquetgo.WithSchemaDefinition(s)
-}*/
