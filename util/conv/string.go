@@ -19,7 +19,6 @@ func ToString(v any) string {
 		if val.Kind() == reflect.Ptr && val.IsNil() {
 			return ""
 		}
-		// We might need to reflect to detect pointers
 		return fmt.Sprint(val)
 	}
 }

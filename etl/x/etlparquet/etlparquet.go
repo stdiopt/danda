@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"reflect"
 	"time"
@@ -110,7 +109,6 @@ func Encode(it Iter) Iter {
 				if err != nil {
 					return err
 				}
-				log.Println("Schema:", schema)
 				w := etlio.YieldWriter(yield)
 				pw = goparquet.NewFileWriter(w,
 					goparquet.WithSchemaDefinition(schema),
@@ -135,7 +133,6 @@ func Encode(it Iter) Iter {
 // Build schema definition from reflection
 func schemaFrom(v interface{}) (*parquetschema.SchemaDefinition, error) {
 	if r, ok := v.(drow.Row); ok {
-		log.Println("It is drow")
 		return drowSchemaFrom(r)
 	}
 	val := reflect.Indirect(reflect.ValueOf(v))

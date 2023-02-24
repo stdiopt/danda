@@ -2,7 +2,6 @@ package etlparquet
 
 import (
 	"fmt"
-	"log"
 	"math/big"
 	"reflect"
 	"time"
@@ -173,7 +172,6 @@ func drowSchemaFrom(r drow.Row) (*parquetschema.SchemaDefinition, error) {
 				LogicalType:    logTyp,
 			},
 		}
-		log.Println("Adding column:", col.SchemaElement.Name)
 		root.RootColumn.Children = append(root.RootColumn.Children, col)
 	}
 	return root, nil
