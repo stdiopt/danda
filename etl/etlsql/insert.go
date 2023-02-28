@@ -165,7 +165,7 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 		for i := 0; i < opt.insertWorkers; i++ {
 			var r []Row
 			b, e := i*step, (i+1)*step
-			if i < opt.insertWorkers-1 {
+			if i < opt.insertWorkers-1 && e < len(rows) {
 				r = rows[b:e]
 			} else {
 				r = rows[b:]
