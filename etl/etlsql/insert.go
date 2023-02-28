@@ -155,8 +155,13 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 		}
 		rows = tableDef.NormalizeRows(rows)
 
+		nworkers := opt.insertWorkers
+		if len(rows) < opt.batchSize/opt.insertWorkers {
+			nworkers = 1
+		}
+
 		eg, ctx := errgroup.WithContext(ctx)
-		step := len(rows) / opt.insertWorkers
+		step := len(rows) / nworkers
 		for i := 0; i < opt.insertWorkers; i++ {
 			var r []Row
 			b, e := i*step, (i+1)*step
