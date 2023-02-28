@@ -3,7 +3,6 @@ package etlsql
 import (
 	"context"
 	"fmt"
-	"log"
 	"reflect"
 
 	"github.com/stdiopt/danda/etl"
@@ -166,8 +165,6 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 			} else {
 				r = rows[b:]
 			}
-			log.Printf("Processing: %d to %d out of %d", b, e, len(rows))
-
 			eg.Go(func() error {
 				return d.dialect.Insert(ctx, tx, table, r)
 			})
