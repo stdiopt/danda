@@ -156,25 +156,21 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 		rows = tableDef.NormalizeRows(rows)
 
 		nworkers := opt.insertWorkers
-		if len(rows) < opt.batchSize/opt.insertWorkers {
+		if opt.insertWorkers > opt.batchSize {
 			nworkers = 1
 		}
+		perWorker := opt.batchSize / nworkers
 
 		eg, ctx := errgroup.WithContext(ctx)
-		step := len(rows) / nworkers
-		for i := 0; i < opt.insertWorkers; i++ {
-			var r []Row
-			b, e := i*step, (i+1)*step
-			if i < opt.insertWorkers-1 && e < len(rows) {
-				r = rows[b:e]
-			} else {
-				r = rows[b:]
+		for offset := 0; offset < len(rows); offset += perWorker {
+			if perWorker > len(rows[offset:]) {
+				perWorker = len(rows[offset:])
 			}
+			sub := rows[offset : offset+perWorker]
 			eg.Go(func() error {
-				return d.dialect.Insert(ctx, tx, table, r)
+				return d.dialect.Insert(ctx, tx, table, sub)
 			})
 		}
-
 		if err := eg.Wait(); err != nil {
 			return fmt.Errorf("failed to insert: %w", err)
 		}
