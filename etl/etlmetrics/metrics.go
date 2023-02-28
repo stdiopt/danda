@@ -20,38 +20,59 @@ type perIter struct {
 	done     bool
 }
 
-type Grabber struct {
-	mu      sync.Mutex
-	perIter []*perIter
-	refs    map[string]*perIter
-	mark    time.Time
-	quit    chan struct{}
+type Metrics struct {
+	mu       sync.Mutex
+	perIter  []*perIter
+	refs     map[string]*perIter
+	mark     time.Time
+	interval time.Duration
+	quit     chan struct{}
 }
 
-func (g *Grabber) create(name string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.refs == nil {
-		g.refs = map[string]*perIter{}
+type metricOptions func(m *Metrics)
+
+func WithInterval(d time.Duration) metricOptions {
+	return func(m *Metrics) {
+		m.interval = d
 	}
-	if g.refs[name] != nil {
+}
+
+func New(opts ...metricOptions) *Metrics {
+	m := &Metrics{
+		mark:     time.Now(),
+		interval: 5 * time.Second,
+		quit:     make(chan struct{}),
+	}
+	for _, fn := range opts {
+		fn(m)
+	}
+	return m
+}
+
+func (m *Metrics) create(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.refs == nil {
+		m.refs = map[string]*perIter{}
+	}
+	if m.refs[name] != nil {
 		return
 	}
 
-	m := &perIter{
+	pi := &perIter{
 		name:  name,
 		units: map[string]uint64{},
 	}
-	g.perIter = append(g.perIter, m)
-	g.refs[name] = m
+	m.perIter = append(m.perIter, pi)
+	m.refs[name] = pi
 }
 
-func (g *Grabber) add(name string, v any) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	m := g.refs[name]
-	m.count++
-	m.units[fmt.Sprintf("%T", v)]++
+func (m *Metrics) add(name string, v any) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	mm := m.refs[name]
+	mm.count++
+	mm.units[fmt.Sprintf("%T", v)]++
 
 	/*
 		now := time.Now()
@@ -78,14 +99,14 @@ func (g *Grabber) add(name string, v any) {
 	*/
 }
 
-func (g *Grabber) done(name string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	m, ok := g.refs[name]
+func (m *Metrics) done(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	mm, ok := m.refs[name]
 	if !ok {
 		return
 	}
-	m.done = true
+	mm.done = true
 	/*
 		running := 0
 		for _, m := range g.perIter {
@@ -104,23 +125,16 @@ func (g *Grabber) done(name string) {
 		}*/
 }
 
-func New() *Grabber {
-	return &Grabber{
-		mark: time.Now(),
-		quit: make(chan struct{}),
-	}
+func (m *Metrics) Start() {
+	go m.spin()
 }
 
-func (g *Grabber) Start() {
-	go g.spin()
-}
-
-func (g *Grabber) Done() {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	close(g.quit)
+func (m *Metrics) Done() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	close(m.quit)
 	log.Printf("--- DONE Metrics ---")
-	for _, m := range g.perIter {
+	for _, m := range m.perIter {
 		log.Printf("  [%s] Total processed: %d closed: %v", m.name, m.count, m.done)
 		for k, v := range m.units {
 			log.Printf("  [%s]   %s: %d", m.name, k, v)
@@ -128,22 +142,22 @@ func (g *Grabber) Done() {
 	}
 }
 
-func (g *Grabber) spin() {
+func (m *Metrics) spin() {
 	mark := time.Now()
 	for {
 		select {
-		case <-g.quit:
+		case <-m.quit:
 			return
 		default:
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(m.interval)
 		//if time.Since(mark) < 5*time.Second {
 		//	continue
 		//}
 		running := 0
 		func() {
-			g.mu.Lock()
-			defer g.mu.Unlock()
+			m.mu.Lock()
+			defer m.mu.Unlock()
 
 			secs := time.Since(mark).Seconds()
 			log.Printf("--- Metrics %.2fs ---", secs)
@@ -152,7 +166,7 @@ func (g *Grabber) spin() {
 			runtime.ReadMemStats(&mem)
 			log.Printf("  Mem: %s", humanize.Bytes(mem.Alloc))
 
-			for _, m := range g.perIter {
+			for _, m := range m.perIter {
 				if !m.done {
 					running++
 				}
@@ -171,16 +185,16 @@ func (g *Grabber) spin() {
 	}
 }
 
-func (g *Grabber) Count(it Iter, name string) Iter {
-	g.create(name)
+func (m *Metrics) Count(it Iter, name string) Iter {
+	m.create(name)
 	return etl.MakeIter(etl.Custom[any]{
 		Next: func(ctx context.Context) (any, error) {
 			v, err := it.Next(ctx)
-			g.add(name, v)
+			m.add(name, v)
 			return v, err
 		},
 		Close: func() error {
-			g.done(name)
+			m.done(name)
 			return it.Close()
 		},
 	})

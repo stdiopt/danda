@@ -3,10 +3,12 @@ package etlsql
 import (
 	"context"
 	"fmt"
+	"log"
 	"reflect"
 
 	"github.com/stdiopt/danda/etl"
 	"github.com/stdiopt/danda/etl/etlsql/dialect"
+	"golang.org/x/sync/errgroup"
 )
 
 type DDLSync int
@@ -18,12 +20,19 @@ const (
 )
 
 type insertOptions struct {
-	batchSize    int
-	ddlSync      DDLSync
-	nullables    map[string]struct{}
-	typeOverride func(t dialect.Col) string
+	batchSize     int
+	ddlSync       DDLSync
+	nullables     map[string]struct{}
+	insertWorkers int
+	typeOverride  func(t dialect.Col) string
 }
 type insertOptFunc func(*insertOptions)
+
+func WithInsertWorkers(n int) insertOptFunc {
+	return func(o *insertOptions) {
+		o.insertWorkers = n
+	}
+}
 
 func WithBatchSize(n int) insertOptFunc {
 	return func(o *insertOptions) {
@@ -66,8 +75,9 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 	}
 
 	opt := insertOptions{
-		batchSize: 1,
-		ddlSync:   DDLNone,
+		batchSize:     1,
+		ddlSync:       DDLNone,
+		insertWorkers: 1,
 	}
 	opt.apply(opts...)
 
@@ -114,7 +124,7 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 		if err != nil {
 			return err
 		}
-		defer tx.Rollback()
+		defer tx.Rollback() // nolint: errcheck
 
 		// Exceptional case, we attept to reload the table under the transaction if columns are empty.
 		if len(tableDef.Columns) == 0 {
@@ -146,9 +156,27 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 		}
 		rows = tableDef.NormalizeRows(rows)
 
-		if err := d.dialect.Insert(ctx, tx, table, rows); err != nil {
-			return err
+		eg, ctx := errgroup.WithContext(ctx)
+		step := len(rows) / opt.insertWorkers
+		for i := 0; i < opt.insertWorkers; i++ {
+			var r []Row
+			b, e := i*step, (i+1)*step
+			if i < opt.insertWorkers-1 {
+				r = rows[b:e]
+			} else {
+				r = rows[b:]
+			}
+			log.Printf("Processing: %d to %d out of %d", b, e, len(rows))
+
+			eg.Go(func() error {
+				return d.dialect.Insert(ctx, tx, table, r)
+			})
 		}
+
+		if err := eg.Wait(); err != nil {
+			return fmt.Errorf("failed to insert: %w", err)
+		}
+
 		return tx.Commit()
 	}
 
