@@ -114,7 +114,7 @@ func (p *psql) AddColumns(ctx context.Context, q etlsql.SQLExec, name string, de
 
 		_, err = q.ExecContext(ctx, qry)
 		if err != nil {
-			return fmt.Errorf("addColumns failed: %w", err)
+			return fmt.Errorf("addColumns failed: %w: %s", err, qry)
 		}
 	}
 	return nil
@@ -145,7 +145,8 @@ func (p *psql) insert(ctx context.Context, q etlsql.SQLExec, name string, rows [
 	def := dialect.DefFromRows(rows)
 
 	qryBuf := &bytes.Buffer{}
-	fmt.Fprintf(qryBuf, "INSERT INTO \"%s\" (%s) VALUES ", name, def.StrJoin(", "))
+	insQ := fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES ", name, def.StrJoin(", "))
+	qryBuf.WriteString(insQ)
 	pi := 1
 	for i := 0; i < len(rows); i++ {
 		if i != 0 {
@@ -163,8 +164,10 @@ func (p *psql) insert(ctx context.Context, q etlsql.SQLExec, name string, rows [
 	qryBuf.WriteString(")")
 
 	params := def.RowValues(rows)
-	_, err := q.ExecContext(ctx, qryBuf.String(), params...)
-	return err
+	if _, err := q.ExecContext(ctx, qryBuf.String(), params...); err != nil {
+		return fmt.Errorf("insert failed: %w, %s", err, insQ)
+	}
+	return nil
 }
 
 var (
