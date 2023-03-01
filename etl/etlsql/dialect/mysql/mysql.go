@@ -118,7 +118,7 @@ func (p *mysql) AddColumns(ctx context.Context, db etlsql.SQLExec, name string, 
 }
 
 func (p *mysql) Insert(ctx context.Context, db etlsql.SQLExec, name string, rows []etlsql.Row) error {
-	def := dialect.FromRows(rows)
+	def := dialect.DefFromRows(rows)
 
 	qryBuf := &bytes.Buffer{}
 	fmt.Fprintf(qryBuf, "INSERT INTO `%s` (%s) VALUES ", name, def.StrJoin(", "))

@@ -11,6 +11,7 @@ import (
 	"github.com/stdiopt/danda/drow"
 	"github.com/stdiopt/danda/etl/etlsql"
 	"github.com/stdiopt/danda/etl/etlsql/dialect"
+	"golang.org/x/sync/errgroup"
 )
 
 type (
@@ -119,8 +120,29 @@ func (p *psql) AddColumns(ctx context.Context, q etlsql.SQLExec, name string, de
 	return nil
 }
 
-func (p *psql) Insert(ctx context.Context, q etlsql.SQLExec, name string, rows []etlsql.Row) error {
-	def := dialect.FromRows(rows)
+func (p *psql) Insert(ctx context.Context, db etlsql.SQLExec, name string, rows []etlsql.Row) error {
+	// some psql engines allows max 64k params per query but to be safe we
+	// will use 32k, eventually we can use a config to set this value
+	maxParams := 32767
+
+	maxRows := maxParams / len(rows[0])
+
+	eg, ctx := errgroup.WithContext(ctx)
+	for offset := 0; offset < len(rows); offset += maxRows {
+		end := offset + maxRows
+		if end > len(rows) {
+			end = len(rows)
+		}
+		offs := offset
+		eg.Go(func() error {
+			return p.insert(ctx, db, name, rows[offs:end])
+		})
+	}
+	return eg.Wait()
+}
+
+func (p *psql) insert(ctx context.Context, q etlsql.SQLExec, name string, rows []etlsql.Row) error {
+	def := dialect.DefFromRows(rows)
 
 	qryBuf := &bytes.Buffer{}
 	fmt.Fprintf(qryBuf, "INSERT INTO \"%s\" (%s) VALUES ", name, def.StrJoin(", "))
@@ -139,9 +161,8 @@ func (p *psql) Insert(ctx context.Context, q etlsql.SQLExec, name string, rows [
 		}
 	}
 	qryBuf.WriteString(")")
-	//
-	params := def.RowValues(rows)
 
+	params := def.RowValues(rows)
 	_, err := q.ExecContext(ctx, qryBuf.String(), params...)
 	return err
 }

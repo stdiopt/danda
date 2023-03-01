@@ -40,8 +40,8 @@ type Table struct {
 	Columns []Col
 }
 
-// FromRows scans a slice of rows and returns a TableDef with the columns.
-func FromRows(rows []Row) Table {
+// DefFromRows scans a slice of rows and returns a TableDef with the columns.
+func DefFromRows(rows []Row) Table {
 	def := Table{}
 	for _, r := range rows {
 		for _, f := range r {

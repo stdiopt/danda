@@ -27,24 +27,29 @@ type insertOptions struct {
 }
 type insertOptFunc func(*insertOptions)
 
+// WithInsertWorkers sets the number of workers to use for inserting rows.
 func WithInsertWorkers(n int) insertOptFunc {
 	return func(o *insertOptions) {
 		o.insertWorkers = n
 	}
 }
 
+// WithBatchSize sets the number of rows to insert in a single batch.
+// might still execute multiple inserts.
 func WithBatchSize(n int) insertOptFunc {
 	return func(o *insertOptions) {
 		o.batchSize = n
 	}
 }
 
+// WithDDLSync sets the DDL sync mode.
 func WithDDLSync(ddlSync DDLSync) insertOptFunc {
 	return func(o *insertOptions) {
 		o.ddlSync = ddlSync
 	}
 }
 
+// WithNullables sets the columns that can be null.
 func WithNullables(nullables ...string) insertOptFunc {
 	return func(o *insertOptions) {
 		if o.nullables == nil {
@@ -56,6 +61,8 @@ func WithNullables(nullables ...string) insertOptFunc {
 	}
 }
 
+// WithTypeOverride uses the sql type returned by the func for col
+// if the func returns an empty string, the default type is used.
 func WithTypeOverride(fn func(t dialect.Col) string) insertOptFunc {
 	return func(o *insertOptions) {
 		o.typeOverride = fn
@@ -95,7 +102,7 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 		if len(rows) == 0 {
 			return nil
 		}
-		def := dialect.FromRows(rows)
+		def := dialect.DefFromRows(rows)
 		for i, c := range def.Columns {
 			if opt.typeOverride != nil {
 				if t := opt.typeOverride(c); t != "" {
@@ -134,7 +141,8 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 		}
 		// DDLSync
 		if missing := def.MissingOn(tableDef); missing.Len() > 0 {
-			if len(tableDef.Columns) == 0 {
+			switch {
+			case len(tableDef.Columns) == 0:
 				if opt.ddlSync < DDLCreate {
 					return fmt.Errorf("etlsql.DB.Insert: table '%s' does not exists", table)
 				}
@@ -142,7 +150,7 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 					return err
 				}
 				tableDef = def
-			} else if opt.ddlSync == DDLAddColumns {
+			case opt.ddlSync == DDLAddColumns:
 				if err := d.dialect.AddColumns(ctx, tx, table, missing); err != nil {
 					return err
 				}
@@ -155,6 +163,7 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 		}
 		rows = tableDef.NormalizeRows(rows)
 
+		// split batchSize in several workers
 		nworkers := opt.insertWorkers
 		if opt.insertWorkers > opt.batchSize {
 			nworkers = 1
@@ -163,10 +172,11 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 
 		eg, ctx := errgroup.WithContext(ctx)
 		for offset := 0; offset < len(rows); offset += perWorker {
-			if perWorker > len(rows[offset:]) {
-				perWorker = len(rows[offset:])
+			end := offset + perWorker
+			if end > len(rows) {
+				end = len(rows)
 			}
-			sub := rows[offset : offset+perWorker]
+			sub := rows[offset:end]
 			eg.Go(func() error {
 				return d.dialect.Insert(ctx, tx, table, sub)
 			})
