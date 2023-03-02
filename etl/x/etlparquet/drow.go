@@ -2,7 +2,6 @@ package etlparquet
 
 import (
 	"fmt"
-	"log"
 	"math/big"
 	"reflect"
 	"time"
@@ -43,7 +42,6 @@ func (u *drowUnmarshaler) UnmarshalParquet(obj interfaces.UnmarshalObject) error
 			case parquet.Type_DOUBLE:
 				v = (*float64)(nil)
 			default:
-				log.Printf("[%s] value is nil but type is: %v", name, ch.SchemaElement.Type)
 			}
 		}
 
