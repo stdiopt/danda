@@ -18,25 +18,47 @@ type drowUnmarshaler struct {
 	row    drow.Row
 }
 
+// TODO: improve this.
 func (u *drowUnmarshaler) UnmarshalParquet(obj interfaces.UnmarshalObject) error {
 	data := obj.GetData()
 	for _, ch := range u.schema.RootColumn.Children {
 		name := ch.SchemaElement.Name
-		v, ok := data[name]
-		if !ok {
-			continue
-		}
+		v := data[name]
+		//v, ok := data[name]
+		//if !ok {
+		//	continue
+		//}
+
 		if ch.SchemaElement.ConvertedType != nil {
 			switch *ch.SchemaElement.ConvertedType {
 			case parquet.ConvertedType_UTF8:
+				if v == nil {
+					v = (*string)(nil)
+					break
+				}
 				v = string(v.([]byte))
 			case parquet.ConvertedType_TIMESTAMP_MILLIS:
+				if v == nil {
+					v = (*time.Time)(nil)
+					break
+				}
 				v = time.Unix(0, v.(int64)*int64(time.Millisecond))
 			case parquet.ConvertedType_TIME_MICROS:
+				if v == nil {
+					v = (*time.Time)(nil)
+					break
+				}
 				v = time.Unix(0, v.(int64)*int64(time.Microsecond))
 			case parquet.ConvertedType_TIMESTAMP_MICROS:
+				if v == nil {
+					v = (*time.Time)(nil)
+					break
+				}
 				v = time.Unix(0, v.(int64)*int64(time.Microsecond))
 			case parquet.ConvertedType_DECIMAL:
+				if v == nil {
+					v = (*apd.Decimal)(nil)
+				}
 				switch vv := v.(type) {
 				case []byte:
 					bi := new(big.Int)

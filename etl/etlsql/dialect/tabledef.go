@@ -69,8 +69,14 @@ func (d Table) Get(colName string) Col {
 	return Col{}
 }
 
+func (d *Table) AddCol(col ...Col) {
+	for _, c := range col {
+		d.addCol(c)
+	}
+}
+
 // AddCol adds a column to the table.
-func (d *Table) AddCol(col Col) {
+func (d *Table) addCol(col Col) {
 	for _, c := range d.Columns {
 		if c.Name == col.Name {
 			if c.Type == nil && col.Type != nil {
