@@ -2,6 +2,7 @@ package etlparquet
 
 import (
 	"fmt"
+	"log"
 	"math/big"
 	"reflect"
 	"time"
@@ -24,40 +25,60 @@ func (u *drowUnmarshaler) UnmarshalParquet(obj interfaces.UnmarshalObject) error
 	for _, ch := range u.schema.RootColumn.Children {
 		name := ch.SchemaElement.Name
 		v := data[name]
-		//v, ok := data[name]
-		//if !ok {
-		//	continue
-		//}
+		isNil := false
+		// Convert to a typed nil ptr
+		if v == nil {
+			isNil = true
+			switch ch.SchemaElement.GetType() {
+			case parquet.Type_BOOLEAN:
+				v = (*bool)(nil)
+			case parquet.Type_INT32:
+				v = (*int32)(nil)
+			case parquet.Type_INT64:
+				v = (*int64)(nil)
+			case parquet.Type_BYTE_ARRAY:
+				v = (*[]byte)(nil)
+			case parquet.Type_FLOAT:
+				v = (*float32)(nil)
+			case parquet.Type_DOUBLE:
+				v = (*float64)(nil)
+			default:
+				log.Printf("[%s] value is nil but type is: %v", name, ch.SchemaElement.Type)
+			}
+		}
 
 		if ch.SchemaElement.ConvertedType != nil {
-			switch *ch.SchemaElement.ConvertedType {
+			switch ch.SchemaElement.GetConvertedType() {
 			case parquet.ConvertedType_UTF8:
-				if v == nil {
+				if isNil {
 					v = (*string)(nil)
 					break
 				}
 				v = string(v.([]byte))
 			case parquet.ConvertedType_TIMESTAMP_MILLIS:
-				if v == nil {
+				if isNil {
 					v = (*time.Time)(nil)
 					break
 				}
 				v = time.Unix(0, v.(int64)*int64(time.Millisecond))
 			case parquet.ConvertedType_TIME_MICROS:
-				if v == nil {
+				if isNil {
 					v = (*time.Time)(nil)
 					break
 				}
 				v = time.Unix(0, v.(int64)*int64(time.Microsecond))
 			case parquet.ConvertedType_TIMESTAMP_MICROS:
-				if v == nil {
+				if isNil {
 					v = (*time.Time)(nil)
 					break
 				}
 				v = time.Unix(0, v.(int64)*int64(time.Microsecond))
 			case parquet.ConvertedType_DECIMAL:
-				if v == nil {
-					v = (*apd.Decimal)(nil)
+				if isNil {
+					// we still need scale here so we can't just send (*apd.Decimal)(nil)
+					vv := apd.Decimal{}
+					vv.Exponent = ch.SchemaElement.GetScale()
+					v = &vv // ;(*apd.Decimal)(nil)
 				}
 				switch vv := v.(type) {
 				case []byte:
@@ -67,6 +88,16 @@ func (u *drowUnmarshaler) UnmarshalParquet(obj interfaces.UnmarshalObject) error
 					v = a
 				}
 			}
+		}
+		// Ensure that field is a pointer if it is optional
+		if rt := ch.SchemaElement.RepetitionType; rt != nil && *rt == parquet.FieldRepetitionType_OPTIONAL {
+			typ := reflect.TypeOf(v)
+			if typ.Kind() != reflect.Ptr {
+				t := reflect.New(typ)
+				t.Elem().Set(reflect.ValueOf(v))
+				v = t.Interface()
+			}
+
 		}
 		u.row = u.row.WithField(name, v)
 	}

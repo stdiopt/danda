@@ -58,7 +58,7 @@ func (d *mysql) TableDef(ctx context.Context, db etlsql.SQLQuery, name string) (
 		if err != nil {
 			return Table{}, err
 		}
-		ret.AddCol(dialect.Col{
+		ret = ret.WithColumns(dialect.Col{
 			Name: t.Name(),
 			Type: typ,
 		})

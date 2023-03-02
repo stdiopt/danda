@@ -59,7 +59,7 @@ func (p *psql) TableDef(ctx context.Context, q etlsql.SQLQuery, name string) (Ta
 		if err != nil {
 			return Table{}, err
 		}
-		ret.AddCol(dialect.Col{
+		ret = ret.WithColumns(dialect.Col{
 			Name: t.Name(),
 			Type: typ,
 		})
@@ -217,6 +217,9 @@ func (p *psql) columnSQLTypeName(c dialect.Col) (string, error) {
 			sqlType = "timestamp"
 		case apdDecimalTyp:
 			sqlType = "decimal"
+			if c.Scale != 0 {
+				sqlType += fmt.Sprintf("(10,%d)", c.Scale)
+			}
 			def = "DEFAULT 0.0"
 		}
 	}

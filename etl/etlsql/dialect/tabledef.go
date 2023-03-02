@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/cockroachdb/apd"
 	"github.com/stdiopt/danda/drow"
 )
 
@@ -20,6 +21,7 @@ type Col struct {
 	// Overrides for sql types
 	SQLType string
 	SQLDef  string
+	Scale   int
 }
 
 // Eq compares two columns by name and type.
@@ -45,9 +47,20 @@ func DefFromRows(rows []Row) Table {
 	def := Table{}
 	for _, r := range rows {
 		for _, f := range r {
-			def.AddCol(Col{
-				Name: strings.ToLower(f.Name),
-				Type: reflect.TypeOf(f.Value),
+			scale := 0
+			// Extra decimal case
+			switch v := f.Value.(type) {
+			case *apd.Decimal:
+				if v != nil {
+					scale = int(v.Exponent)
+				}
+			case apd.Decimal:
+				scale = int(v.Exponent)
+			}
+			def = def.WithColumns(Col{
+				Name:  strings.ToLower(f.Name),
+				Type:  reflect.TypeOf(f.Value),
+				Scale: scale,
 			})
 		}
 	}
@@ -69,30 +82,30 @@ func (d Table) Get(colName string) Col {
 	return Col{}
 }
 
-func (d *Table) AddCol(col ...Col) {
-	for _, c := range col {
-		d.addCol(c)
+func (d Table) WithColumns(col ...Col) Table {
+	clone := Table{
+		Columns: append([]Col{}, d.Columns...),
 	}
-}
-
-// AddCol adds a column to the table.
-func (d *Table) addCol(col Col) {
-	for _, c := range d.Columns {
-		if c.Name == col.Name {
-			if c.Type == nil && col.Type != nil {
-				c.Type = col.Type
-			}
-			return
+	for _, c := range col {
+		i := clone.IndexOf(c.Name)
+		if i == -1 {
+			clone.Columns = append(clone.Columns, c)
+			continue
+		}
+		// If existing column type is nil, set it to the new one else
+		// the original prevails
+		if clone.Columns[i].Type == nil && c.Type != nil {
+			clone.Columns[i].Type = c.Type
 		}
 	}
-	d.Columns = append(d.Columns, col)
+	return clone
 }
 
 // MissingOn returns a TableDef with missing columns from d2
 func (d Table) MissingOn(d2 Table) Table {
 	var ret Table
 	for _, c := range d.Columns {
-		if !d2.hasCol(c.Name) {
+		if d2.IndexOf(c.Name) == -1 {
 			ret.Columns = append(ret.Columns, c)
 		}
 	}
@@ -150,13 +163,13 @@ func (d Table) String() string {
 	return buf.String()
 }
 
-func (d Table) hasCol(k string) bool {
-	for _, c := range d.Columns {
+func (d Table) IndexOf(k string) int {
+	for i, c := range d.Columns {
 		if c.Name == k {
-			return true
+			return i
 		}
 	}
-	return false
+	return -1
 }
 
 // equalFold returns a func used in drow.Row.At to fetch a insesitive case field
