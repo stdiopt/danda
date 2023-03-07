@@ -2,12 +2,14 @@ package dialect
 
 import (
 	"bytes"
+	"database/sql"
 	"fmt"
 	"reflect"
 	"strings"
 
 	"github.com/cockroachdb/apd"
 	"github.com/stdiopt/danda/drow"
+	"github.com/stdiopt/danda/etl"
 )
 
 type (
@@ -16,17 +18,21 @@ type (
 
 // Col represets a column in a table
 type Col struct {
-	Name string
-	Type reflect.Type
+	Name     string
+	Type     reflect.Type // RAW? ScanType
+	Nullable bool
+	Length   int64 // for varchar and maybe other types
+	Scale    int   // Precision int ...
 	// Overrides for sql types
-	SQLType string
-	SQLDef  string
-	Scale   int
+	SQLType string // override
 }
 
 // Eq compares two columns by name and type.
 func (c Col) Eq(c2 Col) bool {
-	return c.Name == c2.Name && c.Type == c2.Type
+	return c.Name == c2.Name &&
+		c.Type == c2.Type &&
+		c.Length == c2.Length &&
+		c.Scale == c2.Scale
 }
 
 // Zero returns the zero value for the column type.
@@ -42,14 +48,67 @@ type Table struct {
 	Columns []Col
 }
 
+func DefFromSQLTypes(typs []*sql.ColumnType) (Table, error) {
+	ret := Table{}
+	for _, t := range typs {
+		typ, err := ColumnGoType(t)
+		if err != nil {
+			return Table{}, err
+		}
+		sz := int64(0)
+		if n, ok := t.Length(); ok {
+			sz = n
+		}
+		nullable := false
+		if typ.Kind() == reflect.Ptr {
+			nullable = true
+			typ = typ.Elem()
+		}
+		ret = ret.WithColumns(Col{
+			Name:     t.Name(),
+			Type:     typ,
+			Nullable: nullable,
+			Length:   sz,
+		})
+	}
+	return ret, nil
+}
+
 // DefFromRows scans a slice of rows and returns a TableDef with the columns.
-func DefFromRows(rows []Row) Table {
+func DefFromRows(rows []Row) (Table, error) {
+	it := etl.Values(rows...)
+	return FromIterRows(it)
+}
+
+func FromIterRows(it etl.Iter) (Table, error) {
+	const r = 10
 	def := Table{}
-	for _, r := range rows {
-		for _, f := range r {
+	sizes := map[string]int64{}
+	updSize := func(name string, l int64) int64 {
+		s := l
+		if l > r {
+			s = (l/r)*r + r
+		}
+		if s > sizes[name] {
+			sizes[name] = s
+		}
+		return s
+	}
+	err := etl.Consume(it, func(row drow.Row) error {
+		for _, f := range row {
+			size := int64(0)
 			scale := 0
-			// Extra decimal case
 			switch v := f.Value.(type) {
+			case *string:
+				if v == nil {
+					continue
+				}
+				l := int64(len(*v))
+				size = updSize(f.Name, l)
+			case string:
+				// round to multiple of r
+				l := int64(len(v))
+				size = updSize(f.Name, l)
 			case *apd.Decimal:
 				if v != nil {
 					scale = int(v.Exponent)
@@ -57,14 +116,23 @@ func DefFromRows(rows []Row) Table {
 			case apd.Decimal:
 				scale = int(v.Exponent)
 			}
+			typ := reflect.TypeOf(f.Value)
+			nullable := false
+			if typ.Kind() == reflect.Ptr {
+				nullable = true
+				typ = typ.Elem()
+			}
 			def = def.WithColumns(Col{
-				Name:  strings.ToLower(f.Name),
-				Type:  reflect.TypeOf(f.Value),
-				Scale: scale,
+				Name:     strings.ToLower(f.Name),
+				Type:     typ,
+				Nullable: nullable,
+				Length:   size,
+				Scale:    scale,
 			})
 		}
-	}
-	return def
+		return nil
+	})
+	return def, err
 }
 
 // Len returns the number of columns in the table.
@@ -182,4 +250,11 @@ func EqualFold(s string) func(row Row) *drow.Field {
 		}
 		return nil
 	}
+}
+
+func indirect(t reflect.Type) reflect.Type {
+	if t.Kind() == reflect.Ptr {
+		return t.Elem()
+	}
+	return t
 }

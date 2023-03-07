@@ -102,7 +102,10 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 		if len(rows) == 0 {
 			return nil
 		}
-		def := dialect.DefFromRows(rows)
+		def, err := dialect.DefFromRows(rows)
+		if err != nil {
+			return err
+		}
 		for i, c := range def.Columns {
 			if opt.typeOverride != nil {
 				if t := opt.typeOverride(c); t != "" {

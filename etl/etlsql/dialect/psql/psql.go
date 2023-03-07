@@ -24,14 +24,12 @@ var Dialect = &psql{}
 type psql struct{}
 
 func (p *psql) TableDef(ctx context.Context, q etlsql.SQLQuery, name string) (Table, error) {
-	tableQry := fmt.Sprintf(`
-			SELECT count(table_name) 
-			FROM information_schema.tables 
-			WHERE table_schema = 'public' 
-				AND table_name = '%s'`,
-		name,
-	)
-	row := q.QueryRowContext(ctx, tableQry)
+	tableQry := `
+		SELECT count(table_name)
+		FROM information_schema.tables
+		WHERE table_schema = 'public'
+			AND table_name = $1`
+	row := q.QueryRowContext(ctx, tableQry, name)
 	var c int
 	if err := row.Scan(&c); err != nil {
 		return Table{}, err
@@ -53,18 +51,7 @@ func (p *psql) TableDef(ctx context.Context, q etlsql.SQLQuery, name string) (Ta
 		return Table{}, fmt.Errorf("fetch columns: %w", err)
 	}
 
-	ret := Table{}
-	for _, t := range typs {
-		typ, err := dialect.ColumnGoType(t)
-		if err != nil {
-			return Table{}, err
-		}
-		ret = ret.WithColumns(dialect.Col{
-			Name: t.Name(),
-			Type: typ,
-		})
-	}
-	return ret, nil
+	return dialect.DefFromSQLTypes(typs)
 }
 
 func (p *psql) CreateTable(ctx context.Context, q etlsql.SQLExec, name string, def dialect.Table) error {
@@ -105,9 +92,7 @@ func (p *psql) AddColumns(ctx context.Context, q etlsql.SQLExec, name string, de
 		}
 
 		// in this case we allow null since we're adding a column
-		qry := fmt.Sprintf(`
-			ALTER TABLE "%s"
-			ADD COLUMN "%s" %s`,
+		qry := fmt.Sprintf(`ALTER TABLE "%s" ADD COLUMN "%s" %s`,
 			name,
 			col.Name, sqlType,
 		)
@@ -142,7 +127,10 @@ func (p *psql) Insert(ctx context.Context, db etlsql.SQLExec, name string, rows 
 }
 
 func (p *psql) insert(ctx context.Context, q etlsql.SQLExec, name string, rows []etlsql.Row) error {
-	def := dialect.DefFromRows(rows)
+	def, err := dialect.DefFromRows(rows)
+	if err != nil {
+		return err
+	}
 
 	qryBuf := &bytes.Buffer{}
 	insQ := fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES ", name, def.StrJoin(", "))
@@ -185,7 +173,7 @@ func (p *psql) columnSQLTypeName(c dialect.Col) (string, error) {
 
 	ftyp := c.Type
 
-	nullable := false
+	nullable := c.Nullable
 	if ftyp.Kind() == reflect.Ptr {
 		nullable = true
 		ftyp = ftyp.Elem()
@@ -207,8 +195,11 @@ func (p *psql) columnSQLTypeName(c dialect.Col) (string, error) {
 	case reflect.Float32, reflect.Float64:
 		sqlType, def = "float", "DEFAULT 0.0"
 	case reflect.String: // or blob?
-		// sqlType, def = "varchar(max)", "DEFAULT ''"
-		sqlType, def = "text", "DEFAULT ''"
+		def = "DEFAULT ''"
+		sqlType = "text"
+		if c.Length > 0 {
+			sqlType = fmt.Sprintf("varchar(%d)", c.Length)
+		}
 	case reflect.Struct:
 		switch ftyp {
 		case timeTyp:

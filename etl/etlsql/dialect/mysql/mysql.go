@@ -23,14 +23,12 @@ var Dialect = &mysql{}
 type mysql struct{}
 
 func (d *mysql) TableDef(ctx context.Context, db etlsql.SQLQuery, name string) (Table, error) {
-	tableQry := fmt.Sprintf(`
+	tableQry := `
 			SELECT count(table_name) 
 			FROM information_schema.tables 
 			WHERE table_schema = 'DATABASE()' 
-				AND table_name = '%s'`,
-		name,
-	)
-	row := db.QueryRowContext(ctx, tableQry)
+				AND table_name = ?`
+	row := db.QueryRowContext(ctx, tableQry, name)
 	var c int
 	if err := row.Scan(&c); err != nil {
 		return Table{}, err
@@ -52,18 +50,7 @@ func (d *mysql) TableDef(ctx context.Context, db etlsql.SQLQuery, name string) (
 		return Table{}, fmt.Errorf("fetch columns: %w", err)
 	}
 
-	ret := Table{}
-	for _, t := range typs {
-		typ, err := dialect.ColumnGoType(t)
-		if err != nil {
-			return Table{}, err
-		}
-		ret = ret.WithColumns(dialect.Col{
-			Name: t.Name(),
-			Type: typ,
-		})
-	}
-	return ret, nil
+	return dialect.DefFromSQLTypes(typs)
 }
 
 func (d *mysql) CreateTable(ctx context.Context, db etlsql.SQLExec, name string, def dialect.Table) error {
@@ -72,7 +59,7 @@ func (d *mysql) CreateTable(ctx context.Context, db etlsql.SQLExec, name string,
 	qry := &bytes.Buffer{}
 	fmt.Fprintf(qry, "CREATE TABLE IF NOT EXISTS `%s` (\n", name)
 	for i, c := range def.Columns {
-		sqlType, err := d.columnSQLTypeName(c.Type)
+		sqlType, err := d.columnSQLTypeName(c)
 		if err != nil {
 			return fmt.Errorf("field '%s' %w", c.Name, err)
 		}
@@ -97,8 +84,7 @@ func (p *mysql) AddColumns(ctx context.Context, db etlsql.SQLExec, name string, 
 		return nil
 	}
 	for _, col := range def.Columns {
-		ftyp := col.Type
-		sqlType, err := p.columnSQLTypeName(ftyp)
+		sqlType, err := p.columnSQLTypeName(col)
 		if err != nil {
 			return fmt.Errorf("field '%s' %w", col.Name, err)
 		}
@@ -118,7 +104,10 @@ func (p *mysql) AddColumns(ctx context.Context, db etlsql.SQLExec, name string, 
 }
 
 func (p *mysql) Insert(ctx context.Context, db etlsql.SQLExec, name string, rows []etlsql.Row) error {
-	def := dialect.DefFromRows(rows)
+	def, err := dialect.DefFromRows(rows)
+	if err != nil {
+		return err
+	}
 
 	qryBuf := &bytes.Buffer{}
 	fmt.Fprintf(qryBuf, "INSERT INTO `%s` (%s) VALUES ", name, def.StrJoin(", "))
@@ -138,7 +127,7 @@ func (p *mysql) Insert(ctx context.Context, db etlsql.SQLExec, name string, rows
 	//
 	params := def.RowValues(rows)
 
-	_, err := db.ExecContext(ctx, qryBuf.String(), params...)
+	_, err = db.ExecContext(ctx, qryBuf.String(), params...)
 	return err
 }
 
@@ -147,10 +136,17 @@ var (
 	apdDecimalTyp = reflect.TypeOf(apd.Decimal{})
 )
 
-func (d mysql) columnSQLTypeName(t reflect.Type) (string, error) {
-	ftyp := t
+func (d mysql) columnSQLTypeName(c dialect.Col) (string, error) {
+	if c.Type == nil {
+		return "", fmt.Errorf("column type is nil")
+	}
+	if c.SQLType != "" {
+		return c.SQLType, nil
+	}
 
-	nullable := false
+	ftyp := c.Type
+
+	nullable := c.Nullable
 	if ftyp.Kind() == reflect.Ptr {
 		nullable = true
 		ftyp = ftyp.Elem()
@@ -159,7 +155,6 @@ func (d mysql) columnSQLTypeName(t reflect.Type) (string, error) {
 	var sqlType string
 	var def string
 	switch ftyp.Kind() {
-
 	case reflect.Bool:
 		sqlType, def = "boolean", "DEFAULT false"
 	case reflect.Int, reflect.Int16, reflect.Int32:
@@ -173,9 +168,11 @@ func (d mysql) columnSQLTypeName(t reflect.Type) (string, error) {
 	case reflect.Float32, reflect.Float64:
 		sqlType, def = "float", "DEFAULT 0.0"
 	case reflect.String: // or blob?
-		// sqlType = "varchar(max)"
-		sqlType, def = "text", ""
-		nullable = true
+		def = "DEFAULT ''"
+		sqlType = "text"
+		if c.Length > 0 {
+			sqlType = fmt.Sprintf("varchar(%d)", c.Length)
+		}
 	case reflect.Struct:
 		switch ftyp {
 		case timeTyp:
@@ -184,6 +181,9 @@ func (d mysql) columnSQLTypeName(t reflect.Type) (string, error) {
 			sqlType = "datetime"
 		case apdDecimalTyp:
 			sqlType = "decimal"
+			if c.Scale != 0 {
+				sqlType += fmt.Sprintf("(10,%d)", c.Scale)
+			}
 			def = "DEFAULT 0.0"
 		}
 	}
