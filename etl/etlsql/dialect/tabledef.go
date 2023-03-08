@@ -81,54 +81,49 @@ func DefFromRows(rows []Row) (Table, error) {
 }
 
 func FromIterRows(it etl.Iter) (Table, error) {
-	const r = 10
 	def := Table{}
-	sizes := map[string]int64{}
-	updSize := func(name string, l int64) int64 {
-		s := l
-		if l > r {
-			s = (l/r)*r + r
-		}
-		if s > sizes[name] {
-			sizes[name] = s
-		}
-		return s
-	}
 	err := etl.Consume(it, func(row drow.Row) error {
 		for _, f := range row {
-			size := int64(0)
-			scale := 0
+			name := strings.ToLower(f.Name)
+
+			var col Col
+			ci := def.IndexOf(name)
+			if ci == -1 {
+				ci = len(def.Columns)
+				col.Name = name
+				def.Columns = append(def.Columns, col)
+			}
+			col = def.Columns[ci]
+
 			switch v := f.Value.(type) {
 			case *string:
 				if v == nil {
-					continue
+					break
 				}
 				l := int64(len(*v))
-				size = updSize(f.Name, l)
+				if col.Length < l {
+					col.Length = l
+				}
 			case string:
 				// round to multiple of r
 				l := int64(len(v))
-				size = updSize(f.Name, l)
+				if col.Length < l {
+					col.Length = l
+				}
 			case *apd.Decimal:
 				if v != nil {
-					scale = int(v.Exponent)
+					col.Scale = int(v.Exponent)
 				}
 			case apd.Decimal:
-				scale = int(v.Exponent)
+				col.Scale = int(v.Exponent)
 			}
 			typ := reflect.TypeOf(f.Value)
-			nullable := false
+			col.Type = typ
 			if typ.Kind() == reflect.Ptr {
-				nullable = true
-				typ = typ.Elem()
+				col.Nullable = true
+				col.Type = typ.Elem()
 			}
-			def = def.WithColumns(Col{
-				Name:     strings.ToLower(f.Name),
-				Type:     typ,
-				Nullable: nullable,
-				Length:   size,
-				Scale:    scale,
-			})
+			def.Columns[ci] = col
 		}
 		return nil
 	})
@@ -141,13 +136,13 @@ func (d Table) Len() int {
 }
 
 // Get returns the column with the given name or an empty col if non existent.
-func (d Table) Get(colName string) Col {
+func (d Table) Get(colName string) (Col, bool) {
 	for _, c := range d.Columns {
 		if c.Name == colName {
-			return c
+			return c, true
 		}
 	}
-	return Col{}
+	return Col{}, false
 }
 
 func (d Table) WithColumns(col ...Col) Table {
@@ -164,6 +159,9 @@ func (d Table) WithColumns(col ...Col) Table {
 		// the original prevails
 		if clone.Columns[i].Type == nil && c.Type != nil {
 			clone.Columns[i].Type = c.Type
+		}
+		if clone.Columns[i].Length < c.Length {
+			clone.Columns[i].Length = c.Length
 		}
 	}
 	return clone
@@ -226,7 +224,11 @@ func (d Table) RowValues(rows []Row) []any {
 func (d Table) String() string {
 	buf := &bytes.Buffer{}
 	for _, c := range d.Columns {
-		fmt.Fprintf(buf, "  %s %s\n", c.Name, c.Type)
+		fmt.Fprintf(buf, "  %s %s nullable:%v", c.Name, c.Type, c.Nullable)
+		if c.Length > 0 {
+			fmt.Fprintf(buf, " (%d)", c.Length)
+		}
+		fmt.Fprintln(buf)
 	}
 	return buf.String()
 }
