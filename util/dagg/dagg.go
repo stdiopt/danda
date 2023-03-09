@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/stdiopt/danda/drow"
-	"github.com/stdiopt/danda/etl"
 	"github.com/stdiopt/danda/util/set"
 )
 
@@ -39,8 +38,6 @@ type Agg[T any] struct {
 	aggs  []optField[T]
 
 	rows []Row
-
-	curi int
 }
 
 // GroupBy sets the group function for the aggregation.
@@ -103,33 +100,11 @@ func (o *Agg[T]) Each(fn func(Row) error) error {
 	return nil
 }
 
-// Next fetches a row and increments the index.
-func (o *Agg[T]) Next() (Row, error) {
-	if o.curi >= len(o.rows) {
-		return nil, etl.EOI
-	}
-
-	r := o.rows[o.curi]
-
-	sr, ok := o.groupMap.Data[o.curi].(Row)
-	if !ok {
-		sr = Row{Field{Name: "group", Value: o.groupMap.Data[o.curi]}}
-	}
-	// Merge into a new row
-	// we copy the Group in the first fields
-	// and process the following fields
-	rc := make(Row, len(sr)+len(r))
-	copy(rc, sr)
-
-	rd := rc[len(sr):]
-	// Apply final transformation or copy
-	for i, a := range o.aggs {
-		rd[i] = r[i]
-		if a.finalFunc == nil {
-			continue
-		}
-		rd[i].Value = a.finalFunc(rd[i].Value)
-	}
-	o.curi++
-	return rc, nil
+func (o *Agg[T]) Result() ([]Row, error) {
+	rows := []Row{}
+	err := o.Each(func(r Row) error {
+		rows = append(rows, r)
+		return nil
+	})
+	return rows, err
 }

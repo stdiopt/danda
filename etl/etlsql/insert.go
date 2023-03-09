@@ -88,7 +88,7 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 	opt.apply(opts...)
 
 	ctx := context.Background()
-	tableDef, err := d.dialect.TableDef(ctx, d.db, table)
+	tableDef, err := d.dialect.TableDef(ctx, d.q, table)
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 			// Override sql type somehow and store it on column
 		}
 
-		tx, err := d.db.Begin()
+		tx, err := d.q.Begin()
 		if err != nil {
 			return err
 		}

@@ -162,6 +162,16 @@ func (s Series) AsInt() []int {
 	return ret
 }
 
+// AsInt64 converts the series to a int64 slice, if the value can't be converted
+// it will be set as the zero value.
+func (s Series) AsInt64() []int64 {
+	ret := make([]int64, s.Len())
+	for i := 0; i < s.Len(); i++ {
+		ret[i] = s.Int64(i)
+	}
+	return ret
+}
+
 // AsFloat64 converts the series to a float64 slice, if the value can't be
 // converted it will be set as the zero value.
 func (s Series) AsFloat64() []float64 {

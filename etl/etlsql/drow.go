@@ -30,13 +30,6 @@ func scanRow(rows *sql.Rows, typs []*sql.ColumnType) (Row, error) {
 	if err := rows.Scan(args...); err != nil {
 		return nil, err
 	}
-	/*
-		{ // DEBUG
-			for _, a := range args {
-				log.Printf("Arg type %T %[1]v:", a)
-			}
-		}
-	*/
 
 	row := make(Row, len(typs))
 	for i, val := range vals {

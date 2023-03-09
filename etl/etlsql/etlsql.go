@@ -29,25 +29,26 @@ type Dialect interface {
 	Insert(ctx context.Context, db SQLExec, name string, rows []Row) error
 }
 
+type Q interface {
+	SQLQuery
+	SQLExec
+	Begin() (*sql.Tx, error)
+}
+
 type DB struct {
 	dialect Dialect
-	db      *sql.DB
+	q       Q
 	err     error
 }
 
-func (d DB) DB() *sql.DB {
-	return d.db
-}
-
-func (d DB) Err() error {
-	return d.err
-}
+// func (d DB) DB() *sql.DB { return d.db }
+func (d DB) Err() error { return d.err }
 
 // New returns a new DB iterator with the given dialect and database.
-func New(d Dialect, db *sql.DB) DB {
+func New(d Dialect, db Q) DB {
 	return DB{
 		dialect: d,
-		db:      db,
+		q:       db,
 	}
 }
 
@@ -60,7 +61,7 @@ func Open(d Dialect, driver, dsn string) DB {
 
 	return DB{
 		dialect: d,
-		db:      db,
+		q:       db,
 	}
 }
 
@@ -75,7 +76,7 @@ func (d DB) Query(query string, args ...any) Iter {
 		Next: func(ctx context.Context) (Row, error) {
 			if rows == nil {
 				var err error
-				rows, err = d.db.QueryContext(ctx, query, args...)
+				rows, err = d.q.QueryContext(ctx, query, args...)
 				if err != nil {
 					return nil, err
 				}

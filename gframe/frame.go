@@ -180,8 +180,9 @@ func (f Frame) DropRows(indexes ...int) Frame {
 }
 
 // Slice all series in the dataframe to the given range
-func (f Frame) Slice(start, sz int) Frame {
+func (f Frame) Slice(start, end int) Frame {
 	nf := f.clone()
+	sz := end - start
 	for i, s := range nf.series {
 		nf.series[i] = s.Slice(start, sz)
 	}
@@ -253,9 +254,11 @@ func (f Frame) Map(fn func(Row) Row) Frame {
 	return Frame{series: series}
 }
 
+type FilterFunc func(Row) bool
+
 // Filter iterates over the dataframe if the fn returns true it will forward
 // the row to the next dataframe
-func (f Frame) Filter(fn func(Row) bool) Frame {
+func (f Frame) Filter(fn FilterFunc) Frame {
 	var series []Series
 	err := f.Each(func(row Row) error {
 		if row == nil { // ignore nil rows!?

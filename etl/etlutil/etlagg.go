@@ -9,20 +9,34 @@ import (
 
 // Group groups data and produces a Row with the data.
 func Group[T any](it Iter, gfn dagg.GroupFn[T], opts ...dagg.OptFn[T]) Iter {
-	var o *dagg.Agg[T]
+	var a *dagg.Agg[T]
+	var aggRows []Row
+	curi := 0
 	return etl.MakeIter(etl.Custom[Row]{
 		Next: func(ctx context.Context) (Row, error) {
-			if o == nil {
-				o = &dagg.Agg[T]{}
-				o.GroupBy(gfn)
+			if aggRows == nil {
+				a = &dagg.Agg[T]{}
+				a.GroupBy(gfn)
 				for _, fn := range opts {
-					fn(o)
+					fn(a)
 				}
-				if err := etl.ConsumeContext(ctx, it, o.Add); err != nil {
+				if err := etl.ConsumeContext(ctx, it, a.Add); err != nil {
 					return nil, err
 				}
+
+				var err error
+				aggRows, err = a.Result()
+				if err != nil {
+					return nil, err
+				}
+				// return err
 			}
-			return o.Next()
+			if curi >= len(aggRows) {
+				return nil, etl.EOI
+			}
+			row := aggRows[curi]
+			curi++
+			return row, nil
 		},
 		Close: it.Close,
 	})

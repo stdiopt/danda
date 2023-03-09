@@ -72,9 +72,11 @@ func MapE[Ti, To any](it Iter, fn func(Ti) (To, error)) Iter {
 	})
 }
 
+type FilterFunc[T any] func(T) bool
+
 // Filter returns an iterator that filters the values of the source given the func fn
 // if fn returns true the value is passed through
-func Filter[T any](it Iter, fn func(T) bool) Iter {
+func Filter[T any](it Iter, fn FilterFunc[T]) Iter {
 	return MakeIter(Custom[T]{
 		Next: func(ctx context.Context) (T, error) {
 			var z T

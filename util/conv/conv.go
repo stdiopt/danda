@@ -2,6 +2,7 @@
 package conv
 
 import (
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -68,6 +69,13 @@ func Conv[T Numbers](def T, v any) T {
 	case uint64:
 		return T(v)
 	default: // returns default on no conversion possible
+		// Extra case in case if it is a pointer we dereference it
+		// and try again
+		val := reflect.ValueOf(v)
+		if val.Kind() == reflect.Ptr {
+			val = val.Elem()
+			return Conv(def, val.Interface())
+		}
 		return def
 	}
 }
