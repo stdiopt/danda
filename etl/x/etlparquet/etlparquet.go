@@ -2,8 +2,8 @@ package etlparquet
 
 import (
 	"bytes"
+	"context"
 	"fmt"
-	"io"
 	"os"
 	"reflect"
 	"time"
@@ -34,13 +34,23 @@ func DecodeFile[T any](it Iter) Iter {
 		if err != nil {
 			return err
 		}
+		def := pr.GetSchemaDefinition()
 		fr := floor.NewReader(pr)
 		for fr.Next() {
-			v := new(T)
-			if err := fr.Scan(v); err != nil {
-				return err
+			var v T
+			switch any(v).(type) {
+			case drow.Row:
+				du := &drowUnmarshaler{def, nil}
+				if err := fr.Scan(du); err != nil {
+					return err
+				}
+				v = any(du.row).(T)
+			default:
+				if err := fr.Scan(&v); err != nil {
+					return err
+				}
 			}
-			if err := yield(*v); err != nil {
+			if err := yield(v); err != nil {
 				return err
 			}
 		}
@@ -51,8 +61,8 @@ func DecodeFile[T any](it Iter) Iter {
 // Decode decodes and unmarshal []byte from 'iter' into T
 func Decode[T any](it Iter) Iter {
 	return etl.MakeGen(etl.Gen[T]{
-		Run: func(yield etl.Y[T]) error {
-			data, err := io.ReadAll(etlio.AsReader(it))
+		Run: func(ctx context.Context, yield etl.Y[T]) error {
+			data, err := etlio.ReadAll(ctx, it)
 			if err != nil {
 				return err
 			}
@@ -75,7 +85,7 @@ func Decode[T any](it Iter) Iter {
 					}
 					v = any(du.row).(T)
 				default:
-					if err := fr.Scan(v); err != nil {
+					if err := fr.Scan(&v); err != nil {
 						return err
 					}
 				}
@@ -92,7 +102,7 @@ func Decode[T any](it Iter) Iter {
 // Encode returns a new iterator that will iterate over encoded parquet []byte
 // data, it creates the schema based on the first received value.
 func Encode(it Iter) Iter {
-	runner := func(yield etl.Y[[]byte]) error {
+	runner := func(ctx context.Context, yield etl.Y[[]byte]) error {
 		var pw *goparquet.FileWriter
 		var fw *floor.Writer
 		defer func() {
@@ -103,7 +113,7 @@ func Encode(it Iter) Iter {
 				pw.Close()
 			}
 		}()
-		return etl.Consume(it, func(v any) error {
+		return etl.ConsumeContext(ctx, it, func(v any) error {
 			if pw == nil {
 				schema, err := schemaFrom(v)
 				if err != nil {
@@ -118,7 +128,10 @@ func Encode(it Iter) Iter {
 			}
 			switch v := v.(type) {
 			case drow.Row:
-				return fw.Write(&drowMarshaler{v})
+				if err := fw.Write(&drowMarshaler{v}); err != nil {
+					return fmt.Errorf("failed to write row: %w", err)
+				}
+				return nil
 			default:
 				return fw.Write(v)
 			}

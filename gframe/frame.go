@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/stdiopt/danda/etl"
+	"github.com/stdiopt/danda/util/conv"
 )
 
 type iterator interface {
@@ -104,7 +105,7 @@ func (f Frame) Err() error {
 }
 
 // Iter returns a dataframe iterator
-func (f Frame) Iter() *IterFrame {
+func (f Frame) Iter() etl.Iter {
 	return &IterFrame{df: &f}
 }
 
@@ -333,7 +334,9 @@ func (f Frame) String() string {
 
 	// Check max text size by checking header then data
 	for ci := 0; ci < len(f.series); ci++ { // columns
-		colLen[ci] = max(colLen[ci], len(f.series[ci].Name()))
+		s := f.series[ci]
+		colLen[ci] = max(colLen[ci], len(s.Name()))
+		colLen[ci] = max(colLen[ci], len(fmt.Sprintf("%T", s.At(0))))
 	}
 	for ri := 0; ri < l; ri++ { // rows
 		for ci := 0; ci < len(f.series); ci++ { // columns
@@ -348,6 +351,15 @@ func (f Frame) String() string {
 			fmt.Fprint(buf, " | ")
 		}
 		fmt.Fprintf(buf, " %-*s", colLen[i], s.Name())
+	}
+	fmt.Fprintf(buf, "\n")
+
+	// render Header types
+	for i, s := range f.series {
+		if i != 0 {
+			fmt.Fprint(buf, " | ")
+		}
+		fmt.Fprintf(buf, " %-*T", colLen[i], s.At(0))
 	}
 	fmt.Fprintf(buf, "\n")
 
@@ -366,7 +378,7 @@ func (f Frame) String() string {
 			if ci != 0 {
 				fmt.Fprint(buf, " | ")
 			}
-			val := fmt.Sprint(f.series[ci].At(ri))
+			val := fmt.Sprint(conv.Deref(f.series[ci].At(ri)))
 			fmt.Fprintf(buf, " %-*v", colLen[ci], val)
 		}
 		fmt.Fprintf(buf, "\n")

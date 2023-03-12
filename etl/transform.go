@@ -102,8 +102,8 @@ func Filter[T any](it Iter, fn FilterFunc[T]) Iter {
 // yielder,
 func Yield[Ti, To any](it Iter, fn func(Ti, Y[To]) error) Iter {
 	return MakeGen(Gen[To]{
-		Run: func(yield Y[To]) error {
-			return Consume(it, func(v Ti) error {
+		Run: func(ctx context.Context, yield Y[To]) error {
+			return ConsumeContext(ctx, it, func(v Ti) error {
 				return fn(v, yield)
 			})
 		},

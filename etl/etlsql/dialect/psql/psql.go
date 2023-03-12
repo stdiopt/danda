@@ -184,6 +184,10 @@ func (p *psql) columnSQLTypeName(c dialect.Col) (string, error) {
 	switch ftyp.Kind() {
 	case reflect.Bool:
 		sqlType, def = "boolean", "DEFAULT false"
+	case reflect.Int8:
+		sqlType, def = "smallint", "DEFAULT 0"
+	case reflect.Uint8:
+		sqlType, def = "unsigned smallint", "DEFAULT 0"
 	case reflect.Int, reflect.Int16, reflect.Int32:
 		sqlType, def = "integer", "DEFAULT 0"
 	case reflect.Uint, reflect.Uint16, reflect.Uint32:
@@ -216,7 +220,7 @@ func (p *psql) columnSQLTypeName(c dialect.Col) (string, error) {
 	}
 
 	if sqlType == "" {
-		return "", fmt.Errorf("unsupported type: %v", ftyp)
+		return "", fmt.Errorf("dialect.psql: unsupported type: %v", ftyp)
 	}
 
 	var e string

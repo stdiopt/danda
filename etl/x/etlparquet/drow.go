@@ -2,6 +2,7 @@ package etlparquet
 
 import (
 	"fmt"
+	"log"
 	"math/big"
 	"reflect"
 	"time"
@@ -47,6 +48,43 @@ func (u *drowUnmarshaler) UnmarshalParquet(obj interfaces.UnmarshalObject) error
 
 		if ch.SchemaElement.ConvertedType != nil {
 			switch ch.SchemaElement.GetConvertedType() {
+			case parquet.ConvertedType_INT_8:
+				if isNil {
+					v = (*int8)(nil)
+					break
+				}
+				v = int8(v.(int32))
+			case parquet.ConvertedType_UINT_8:
+				if isNil {
+					v = (*uint8)(nil)
+					break
+				}
+				v = uint8(v.(int32))
+			case parquet.ConvertedType_INT_16:
+				if isNil {
+					v = (*int16)(nil)
+					break
+				}
+				v = int16(v.(int32))
+			case parquet.ConvertedType_UINT_16:
+				if isNil {
+					v = (*uint16)(nil)
+					break
+				}
+				v = uint16(v.(int32))
+
+			case parquet.ConvertedType_UINT_32:
+				if isNil {
+					v = (*uint32)(nil)
+					break
+				}
+				v = uint32(v.(int32))
+			case parquet.ConvertedType_UINT_64:
+				if isNil {
+					v = (*uint64)(nil)
+					break
+				}
+				v = uint64(v.(int64))
 			case parquet.ConvertedType_UTF8:
 				if isNil {
 					v = (*string)(nil)
@@ -85,6 +123,8 @@ func (u *drowUnmarshaler) UnmarshalParquet(obj interfaces.UnmarshalObject) error
 					a := apd.NewWithBigInt(bi, int32(*ch.SchemaElement.Scale))
 					v = a
 				}
+			default:
+				log.Println("Missing converted:", ch.SchemaElement.GetConvertedType())
 			}
 		}
 		// Ensure that field is a pointer if it is optional
@@ -119,24 +159,24 @@ func (m *drowMarshaler) MarshalParquet(obj interfaces.MarshalObject) error {
 			e.SetByteArray([]byte(v))
 		case int8:
 			e.SetInt32(int32(v))
-		case int16:
-			e.SetInt32(int32(v))
-		case int32:
-			e.SetInt32(v)
-		case int64:
-			e.SetInt64(v)
-		case int:
-			e.SetInt32(int32(v))
 		case uint8:
+			e.SetInt32(int32(v))
+		case int16:
 			e.SetInt32(int32(v))
 		case uint16:
 			e.SetInt32(int32(v))
+		case int32:
+			e.SetInt32(v)
 		case uint32:
 			e.SetInt32(int32(v))
-		case uint64:
-			e.SetInt64(int64(v))
+		case int:
+			e.SetInt32(int32(v))
 		case uint:
 			e.SetInt32(int32(v))
+		case int64:
+			e.SetInt64(v)
+		case uint64:
+			e.SetInt64(int64(v))
 		case float32:
 			e.SetFloat32(v)
 		case float64:
@@ -144,7 +184,7 @@ func (m *drowMarshaler) MarshalParquet(obj interfaces.MarshalObject) error {
 		case bool:
 			e.SetBool(v)
 		case time.Time:
-			e.SetInt64(v.UnixNano())
+			e.SetInt64(v.UnixMilli())
 		default:
 			return fmt.Errorf("unsupported type: %T", v)
 		}
@@ -173,10 +213,28 @@ func drowSchemaFrom(r drow.Row) (*parquetschema.SchemaDefinition, error) {
 			ityp = ityp.Elem()
 		}
 		switch ityp.Kind() {
+		case reflect.Int8:
+			ptyp = parquet.Type_INT32
+			convTyp = convType(parquet.ConvertedType_INT_8)
+		case reflect.Uint8:
+			ptyp = parquet.Type_INT32
+			convTyp = convType(parquet.ConvertedType_UINT_8)
+		case reflect.Int16:
+			ptyp = parquet.Type_INT32
+			convTyp = convType(parquet.ConvertedType_INT_16)
+		case reflect.Uint16:
+			ptyp = parquet.Type_INT32
+			convTyp = convType(parquet.ConvertedType_UINT_16)
 		case reflect.Int, reflect.Int32:
 			ptyp = parquet.Type_INT32
+		case reflect.Uint, reflect.Uint32:
+			ptyp = parquet.Type_INT32
+			convTyp = convType(parquet.ConvertedType_UINT_32)
 		case reflect.Int64:
 			ptyp = parquet.Type_INT64
+		case reflect.Uint64:
+			ptyp = parquet.Type_INT64
+			convTyp = convType(parquet.ConvertedType_UINT_64)
 		case reflect.Float32:
 			ptyp = parquet.Type_FLOAT
 		case reflect.Float64:
@@ -194,25 +252,25 @@ func drowSchemaFrom(r drow.Row) (*parquetschema.SchemaDefinition, error) {
 			}
 
 			ptyp = parquet.Type_BYTE_ARRAY
-			convTyp = new(parquet.ConvertedType)
-			*convTyp = parquet.ConvertedType_UTF8
+			convTyp = convType(parquet.ConvertedType_UTF8)
 			logTyp = &parquet.LogicalType{
 				STRING: &parquet.StringType{},
 			}
-			// regular slice
+		// Add APD
 		case reflect.Struct:
 			if ityp != reflect.TypeOf(time.Time{}) {
 				return nil, fmt.Errorf("unsupported type %v", ityp)
 			}
 			ptyp = parquet.Type_INT64
-			logTyp = &parquet.LogicalType{
+			convTyp = convType(parquet.ConvertedType_TIMESTAMP_MILLIS)
+			/*logTyp = &parquet.LogicalType{
 				TIMESTAMP: &parquet.TimestampType{
 					IsAdjustedToUTC: true,
 					Unit: &parquet.TimeUnit{
 						NANOS: &parquet.NanoSeconds{},
 					},
 				},
-			}
+			}*/
 		}
 		col := &parquetschema.ColumnDefinition{
 			SchemaElement: &parquet.SchemaElement{
@@ -226,4 +284,8 @@ func drowSchemaFrom(r drow.Row) (*parquetschema.SchemaDefinition, error) {
 		root.RootColumn.Children = append(root.RootColumn.Children, col)
 	}
 	return root, nil
+}
+
+func convType(t parquet.ConvertedType) *parquet.ConvertedType {
+	return &t
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync"
 )
 
 var ErrCancelled = errors.New("iterator cancelled")
@@ -17,13 +18,14 @@ type msg[T any] struct {
 }
 
 type Gen[T any] struct {
-	Run   func(Y[T]) error
+	Run   func(context.Context, Y[T]) error
 	Close func() error
 }
 
 func MakeGen[T any](g Gen[T]) Iter {
 	ch := make(chan msg[T])
 	ictx, cancel := context.WithCancelCause(context.Background())
+
 	yield := func(value T) error {
 		select {
 		case <-ictx.Done():
@@ -33,18 +35,22 @@ func MakeGen[T any](g Gen[T]) Iter {
 		}
 	}
 
-	go func() {
-		defer close(ch)
-		if err := g.Run(yield); err != nil {
-			select {
-			case <-ictx.Done():
-			case ch <- msg[T]{err: err}:
+	runner := func() {
+		go func() {
+			defer close(ch)
+			if err := g.Run(ictx, yield); err != nil {
+				select {
+				case <-ictx.Done():
+				case ch <- msg[T]{err: err}:
+				}
 			}
-		}
-	}()
+		}()
+	}
+	once := sync.Once{}
 
 	return MakeIter(Custom[T]{
 		Next: func(ctx context.Context) (T, error) {
+			once.Do(runner)
 			var z T
 			select {
 			case <-ctx.Done():

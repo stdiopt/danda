@@ -41,7 +41,8 @@ type DB struct {
 	err     error
 }
 
-// func (d DB) DB() *sql.DB { return d.db }
+func (d DB) Q() Q { return d.q }
+
 func (d DB) Err() error { return d.err }
 
 // New returns a new DB iterator with the given dialect and database.

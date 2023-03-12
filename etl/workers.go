@@ -19,10 +19,10 @@ func (w W[To]) Yield(v To) error {
 // Workers iterates over a slice of values and calls a worker func for each value.
 func Workers[To any](it Iter, workers int, fn func(context.Context, W[To]) error) Iter {
 	return MakeGen(Gen[To]{
-		Run: func(yield Y[To]) error {
+		Run: func(ctx context.Context, yield Y[To]) error {
 			itval := make(chan any)
 
-			eg, ctx := errgroup.WithContext(context.Background())
+			eg, ctx := errgroup.WithContext(ctx)
 			for i := 0; i < workers; i++ {
 				w := W[To]{
 					Iter:  Chan(itval),
