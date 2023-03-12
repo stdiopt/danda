@@ -3,11 +3,8 @@ package etlsql
 import (
 	"context"
 	"fmt"
-	"reflect"
 
 	"github.com/stdiopt/danda/etl"
-	"github.com/stdiopt/danda/etl/etlsql/dialect"
-	"golang.org/x/sync/errgroup"
 )
 
 type DDLSync int
@@ -19,20 +16,12 @@ const (
 )
 
 type insertOptions struct {
-	batchSize     int
-	ddlSync       DDLSync
-	nullables     map[string]struct{}
-	insertWorkers int
-	typeOverride  func(t dialect.Col) string
+	batchSize    int
+	ddlSync      DDLSync
+	nullables    map[string]struct{}
+	typeOverride func(t ColDef) string
 }
 type insertOptFunc func(*insertOptions)
-
-// WithInsertWorkers sets the number of workers to use for inserting rows.
-func WithInsertWorkers(n int) insertOptFunc {
-	return func(o *insertOptions) {
-		o.insertWorkers = n
-	}
-}
 
 // WithBatchSize sets the number of rows to insert in a single batch.
 // might still execute multiple inserts.
@@ -63,7 +52,7 @@ func WithNullables(nullables ...string) insertOptFunc {
 
 // WithTypeOverride uses the sql type returned by the func for col
 // if the func returns an empty string, the default type is used.
-func WithTypeOverride(fn func(t dialect.Col) string) insertOptFunc {
+func WithTypeOverride(fn func(t ColDef) string) insertOptFunc {
 	return func(o *insertOptions) {
 		o.typeOverride = fn
 	}
@@ -81,9 +70,8 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 	}
 
 	opt := insertOptions{
-		batchSize:     1,
-		ddlSync:       DDLNone,
-		insertWorkers: 1,
+		batchSize: 1,
+		ddlSync:   DDLNone,
 	}
 	opt.apply(opts...)
 
@@ -102,7 +90,7 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 		if len(rows) == 0 {
 			return nil
 		}
-		def, err := dialect.DefFromRows(rows)
+		def, err := DefFromRows(table, rows)
 		if err != nil {
 			return err
 		}
@@ -112,18 +100,15 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 					def.Columns[i].SQLType = t
 				}
 			}
-			if c.Type.Kind() == reflect.Ptr {
-				continue
-			}
 			if opt.nullables == nil {
 				continue
 			}
 			if _, ok := opt.nullables[c.Name]; ok {
-				def.Columns[i].Type = reflect.PtrTo(c.Type)
+				def.Columns[i].Nullable = true
 				continue
 			}
 			if _, ok := opt.nullables["*"]; ok {
-				def.Columns[i].Type = reflect.PtrTo(c.Type)
+				def.Columns[i].Nullable = true
 				continue
 			}
 			// Override sql type somehow and store it on column
@@ -136,7 +121,7 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 		defer tx.Rollback() // nolint: errcheck
 
 		// Exceptional case, we attept to reload the table under the transaction if columns are empty.
-		if len(tableDef.Columns) == 0 {
+		if tableDef.Len() == 0 {
 			tableDef, err = d.dialect.TableDef(ctx, tx, table)
 			if err != nil {
 				return err
@@ -144,48 +129,25 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 		}
 		// DDLSync
 		if missing := def.MissingOn(tableDef); missing.Len() > 0 {
+			var err error
 			switch {
 			case len(tableDef.Columns) == 0:
 				if opt.ddlSync < DDLCreate {
 					return fmt.Errorf("etlsql.DB.Insert: table '%s' does not exists", table)
 				}
-				if err := d.dialect.CreateTable(ctx, tx, table, def); err != nil {
-					return err
-				}
-				tableDef = def
+				err = d.dialect.CreateTable(ctx, tx, def)
 			case opt.ddlSync == DDLAddColumns:
-				if err := d.dialect.AddColumns(ctx, tx, table, missing); err != nil {
-					return err
-				}
-				// Reload def
-				tableDef, err = d.dialect.TableDef(ctx, tx, table)
-				if err != nil {
-					return err
-				}
+				err = d.dialect.AddColumns(ctx, tx, missing)
 			}
+			if err != nil {
+				return err
+			}
+			tableDef = def
 		}
 		rows = tableDef.NormalizeRows(rows)
 
-		// split batchSize in several workers
-		nworkers := opt.insertWorkers
-		if opt.insertWorkers > opt.batchSize {
-			nworkers = 1
-		}
-		perWorker := opt.batchSize / nworkers
-
-		eg, ctx := errgroup.WithContext(ctx)
-		for offset := 0; offset < len(rows); offset += perWorker {
-			end := offset + perWorker
-			if end > len(rows) {
-				end = len(rows)
-			}
-			sub := rows[offset:end]
-			eg.Go(func() error {
-				return d.dialect.Insert(ctx, tx, table, sub)
-			})
-		}
-		if err := eg.Wait(); err != nil {
-			return fmt.Errorf("failed to insert: %w", err)
+		if err := d.dialect.Insert(ctx, tx, tableDef, rows); err != nil {
+			return err
 		}
 
 		return tx.Commit()

@@ -3,10 +3,10 @@ package etlsql
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"github.com/stdiopt/danda/drow"
 	"github.com/stdiopt/danda/etl"
-	"github.com/stdiopt/danda/etl/etlsql/dialect"
 )
 
 type (
@@ -23,10 +23,10 @@ type SQLExec interface {
 }
 
 type Dialect interface {
-	TableDef(ctx context.Context, db SQLQuery, name string) (dialect.Table, error)
-	CreateTable(ctx context.Context, db SQLExec, name string, table dialect.Table) error
-	AddColumns(ctx context.Context, db SQLExec, name string, table dialect.Table) error
-	Insert(ctx context.Context, db SQLExec, name string, rows []Row) error
+	TableDef(ctx context.Context, db SQLQuery, name string) (TableDef, error)
+	CreateTable(ctx context.Context, db SQLExec, table TableDef) error
+	AddColumns(ctx context.Context, db SQLExec, table TableDef) error
+	Insert(ctx context.Context, db SQLExec, table TableDef, rows []Row) error
 }
 
 type Q interface {
@@ -39,6 +39,10 @@ type DB struct {
 	dialect Dialect
 	q       Q
 	err     error
+}
+
+func (d DB) String() string {
+	return fmt.Sprintf("dialect: %T", d.dialect)
 }
 
 func (d DB) Q() Q { return d.q }

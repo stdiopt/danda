@@ -10,20 +10,20 @@ import (
 	"github.com/cockroachdb/apd"
 	"github.com/stdiopt/danda/drow"
 	"github.com/stdiopt/danda/etl/etlsql"
-	"github.com/stdiopt/danda/etl/etlsql/dialect"
 	"golang.org/x/sync/errgroup"
 )
 
 type (
-	Row   = drow.Row
-	Table = dialect.Table
+	Row      = drow.Row
+	TableDef = etlsql.TableDef
+	ColDef   = etlsql.ColDef
 )
 
 var Dialect = &psql{}
 
 type psql struct{}
 
-func (p *psql) TableDef(ctx context.Context, q etlsql.SQLQuery, name string) (Table, error) {
+func (p *psql) TableDef(ctx context.Context, q etlsql.SQLQuery, name string) (TableDef, error) {
 	tableQry := `
 		SELECT count(table_name)
 		FROM information_schema.tables
@@ -32,33 +32,33 @@ func (p *psql) TableDef(ctx context.Context, q etlsql.SQLQuery, name string) (Ta
 	row := q.QueryRowContext(ctx, tableQry, name)
 	var c int
 	if err := row.Scan(&c); err != nil {
-		return Table{}, err
+		return TableDef{}, err
 	}
 	if c == 0 {
-		return Table{}, nil
+		return TableDef{}, nil
 	}
 
 	// Load table schema here
 	qry := fmt.Sprintf("SELECT * FROM %s LIMIT 0", name)
 	rows, err := q.QueryContext(ctx, qry)
 	if err != nil {
-		return Table{}, fmt.Errorf("selecting table: %w", err)
+		return TableDef{}, fmt.Errorf("selecting table: %w", err)
 	}
 	defer rows.Close()
 
 	typs, err := rows.ColumnTypes()
 	if err != nil {
-		return Table{}, fmt.Errorf("fetch columns: %w", err)
+		return TableDef{}, fmt.Errorf("fetch columns: %w", err)
 	}
 
-	return dialect.DefFromSQLTypes(typs)
+	return etlsql.DefFromSQLTypes(name, typs)
 }
 
-func (p *psql) CreateTable(ctx context.Context, q etlsql.SQLExec, name string, def dialect.Table) error {
+func (p *psql) CreateTable(ctx context.Context, q etlsql.SQLExec, def TableDef) error {
 	// Create statement
 	params := []any{}
 	qry := &bytes.Buffer{}
-	fmt.Fprintf(qry, "CREATE TABLE IF NOT EXISTS \"%s\" (\n", name)
+	fmt.Fprintf(qry, "CREATE TABLE IF NOT EXISTS \"%s\" (\n", def.Name)
 	for i, c := range def.Columns {
 		sqlType, err := p.columnSQLTypeName(c)
 		if err != nil {
@@ -75,12 +75,12 @@ func (p *psql) CreateTable(ctx context.Context, q etlsql.SQLExec, name string, d
 
 	_, err := q.ExecContext(ctx, qry.String(), params...)
 	if err != nil {
-		return fmt.Errorf("createTable failed: %w: %v", err, qry.String())
+		return fmt.Errorf("psql: createTable failed: %w: %v", err, qry.String())
 	}
 	return nil
 }
 
-func (p *psql) AddColumns(ctx context.Context, q etlsql.SQLExec, name string, def dialect.Table) error {
+func (p *psql) AddColumns(ctx context.Context, q etlsql.SQLExec, def TableDef) error {
 	if len(def.Columns) == 0 {
 		return nil
 	}
@@ -93,7 +93,7 @@ func (p *psql) AddColumns(ctx context.Context, q etlsql.SQLExec, name string, de
 
 		// in this case we allow null since we're adding a column
 		qry := fmt.Sprintf(`ALTER TABLE "%s" ADD COLUMN "%s" %s`,
-			name,
+			def.Name,
 			col.Name, sqlType,
 		)
 
@@ -105,7 +105,7 @@ func (p *psql) AddColumns(ctx context.Context, q etlsql.SQLExec, name string, de
 	return nil
 }
 
-func (p *psql) Insert(ctx context.Context, db etlsql.SQLExec, name string, rows []etlsql.Row) error {
+func (p *psql) Insert(ctx context.Context, db etlsql.SQLExec, def TableDef, rows []etlsql.Row) error {
 	// some psql engines allows max 64k params per query but to be safe we
 	// will use 32k, eventually we can use a config to set this value
 	maxParams := 32767
@@ -120,20 +120,15 @@ func (p *psql) Insert(ctx context.Context, db etlsql.SQLExec, name string, rows 
 		}
 		offs := offset
 		eg.Go(func() error {
-			return p.insert(ctx, db, name, rows[offs:end])
+			return p.insert(ctx, db, def, rows[offs:end])
 		})
 	}
 	return eg.Wait()
 }
 
-func (p *psql) insert(ctx context.Context, q etlsql.SQLExec, name string, rows []etlsql.Row) error {
-	def, err := dialect.DefFromRows(rows)
-	if err != nil {
-		return err
-	}
-
+func (p *psql) insert(ctx context.Context, q etlsql.SQLExec, def TableDef, rows []etlsql.Row) error {
 	qryBuf := &bytes.Buffer{}
-	insQ := fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES ", name, def.StrJoin(", "))
+	insQ := fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES ", def.Name, def.StrJoin(", "))
 	qryBuf.WriteString(insQ)
 	pi := 1
 	for i := 0; i < len(rows); i++ {
@@ -163,10 +158,7 @@ var (
 	apdDecimalTyp = reflect.TypeOf(apd.Decimal{})
 )
 
-func (p *psql) columnSQLTypeName(c dialect.Col) (string, error) {
-	if c.Type == nil {
-		return "", fmt.Errorf("nil type")
-	}
+func (p *psql) columnSQLTypeName(c ColDef) (string, error) {
 	if c.SQLType != "" {
 		return c.SQLType, nil
 	}
@@ -174,48 +166,42 @@ func (p *psql) columnSQLTypeName(c dialect.Col) (string, error) {
 	ftyp := c.Type
 
 	nullable := c.Nullable
-	if ftyp.Kind() == reflect.Ptr {
-		nullable = true
-		ftyp = ftyp.Elem()
-	}
 
 	var sqlType string
 	var def string
-	switch ftyp.Kind() {
-	case reflect.Bool:
+	switch c.Type {
+	case etlsql.TypeBoolean:
 		sqlType, def = "boolean", "DEFAULT false"
-	case reflect.Int8:
+	case etlsql.TypeSmallInt:
 		sqlType, def = "smallint", "DEFAULT 0"
-	case reflect.Uint8:
+	case etlsql.TypeUnsignedSmallInt:
 		sqlType, def = "unsigned smallint", "DEFAULT 0"
-	case reflect.Int, reflect.Int16, reflect.Int32:
+	case etlsql.TypeInteger:
 		sqlType, def = "integer", "DEFAULT 0"
-	case reflect.Uint, reflect.Uint16, reflect.Uint32:
+	case etlsql.TypeUnsignedInteger:
 		sqlType, def = "unsigned integer", "DEFAULT 0"
-	case reflect.Int64:
+	case etlsql.TypeBigInt:
 		sqlType, def = "bigint", "DEFAULT 0"
-	case reflect.Uint64:
+	case etlsql.TypeUnsignedBigInt:
 		sqlType, def = "unsigned bigint", "DETAULT 0"
-	case reflect.Float32, reflect.Float64:
-		sqlType, def = "float", "DEFAULT 0.0"
-	case reflect.String: // or blob?
+	case etlsql.TypeReal:
+		sqlType, def = "real", "DEFAULT 0.0"
+	case etlsql.TypeDouble:
+		sqlType, def = "double precision", "DEFAULT 0.0"
+	case etlsql.TypeVarchar:
 		def = "DEFAULT ''"
-		sqlType = "text"
+		sqlType = "varchar"
 		if c.Length > 0 {
 			sqlType = fmt.Sprintf("varchar(%d)", c.Length)
 		}
-	case reflect.Struct:
-		switch ftyp {
-		case timeTyp:
-			nullable = true
-			// sqlType,def = "datetime","01-01-1970 00:00:00"
-			sqlType = "timestamp"
-		case apdDecimalTyp:
-			sqlType = "decimal"
-			if c.Scale != 0 {
-				sqlType += fmt.Sprintf("(10,%d)", c.Scale)
-			}
-			def = "DEFAULT 0.0"
+	case etlsql.TypeTimestamp:
+		nullable = true
+		sqlType = "timestamp"
+	case etlsql.TypeDecimal:
+		def = "DEFAULT 0.0"
+		sqlType = "decimal"
+		if c.Scale != 0 {
+			sqlType += fmt.Sprintf("(10,%d)", c.Scale)
 		}
 	}
 

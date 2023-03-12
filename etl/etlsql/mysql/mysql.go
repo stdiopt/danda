@@ -10,12 +10,12 @@ import (
 	"github.com/cockroachdb/apd"
 	"github.com/stdiopt/danda/drow"
 	"github.com/stdiopt/danda/etl/etlsql"
-	"github.com/stdiopt/danda/etl/etlsql/dialect"
 )
 
 type (
 	Row   = drow.Row
-	Table = dialect.Table
+	Table = etlsql.TableDef
+	Col   = etlsql.ColDef
 )
 
 var Dialect = &mysql{}
@@ -50,14 +50,14 @@ func (d *mysql) TableDef(ctx context.Context, db etlsql.SQLQuery, name string) (
 		return Table{}, fmt.Errorf("fetch columns: %w", err)
 	}
 
-	return dialect.DefFromSQLTypes(typs)
+	return etlsql.DefFromSQLTypes(name, typs)
 }
 
-func (d *mysql) CreateTable(ctx context.Context, db etlsql.SQLExec, name string, def dialect.Table) error {
+func (d *mysql) CreateTable(ctx context.Context, db etlsql.SQLExec, def Table) error {
 	// Create statement
 	params := []any{}
 	qry := &bytes.Buffer{}
-	fmt.Fprintf(qry, "CREATE TABLE IF NOT EXISTS `%s` (\n", name)
+	fmt.Fprintf(qry, "CREATE TABLE IF NOT EXISTS `%s` (\n", def.Name)
 	for i, c := range def.Columns {
 		sqlType, err := d.columnSQLTypeName(c)
 		if err != nil {
@@ -79,7 +79,7 @@ func (d *mysql) CreateTable(ctx context.Context, db etlsql.SQLExec, name string,
 	return nil
 }
 
-func (p *mysql) AddColumns(ctx context.Context, db etlsql.SQLExec, name string, def dialect.Table) error {
+func (p *mysql) AddColumns(ctx context.Context, db etlsql.SQLExec, def Table) error {
 	if len(def.Columns) == 0 {
 		return nil
 	}
@@ -91,7 +91,7 @@ func (p *mysql) AddColumns(ctx context.Context, db etlsql.SQLExec, name string, 
 
 		// in this case we allow null since we're adding a column
 		qry := fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN `%s` %s",
-			name,
+			def.Name,
 			col.Name, sqlType,
 		)
 
@@ -103,14 +103,9 @@ func (p *mysql) AddColumns(ctx context.Context, db etlsql.SQLExec, name string, 
 	return nil
 }
 
-func (p *mysql) Insert(ctx context.Context, db etlsql.SQLExec, name string, rows []etlsql.Row) error {
-	def, err := dialect.DefFromRows(rows)
-	if err != nil {
-		return err
-	}
-
+func (p *mysql) Insert(ctx context.Context, db etlsql.SQLExec, def Table, rows []etlsql.Row) error {
 	qryBuf := &bytes.Buffer{}
-	fmt.Fprintf(qryBuf, "INSERT INTO `%s` (%s) VALUES ", name, def.StrJoin(", "))
+	fmt.Fprintf(qryBuf, "INSERT INTO `%s` (%s) VALUES ", def.Name, def.StrJoin(", "))
 	for i := 0; i < len(rows); i++ {
 		if i != 0 {
 			qryBuf.WriteString("),\n")
@@ -127,7 +122,7 @@ func (p *mysql) Insert(ctx context.Context, db etlsql.SQLExec, name string, rows
 	//
 	params := def.RowValues(rows)
 
-	_, err = db.ExecContext(ctx, qryBuf.String(), params...)
+	_, err := db.ExecContext(ctx, qryBuf.String(), params...)
 	return err
 }
 
@@ -136,10 +131,7 @@ var (
 	apdDecimalTyp = reflect.TypeOf(apd.Decimal{})
 )
 
-func (d mysql) columnSQLTypeName(c dialect.Col) (string, error) {
-	if c.Type == nil {
-		return "", fmt.Errorf("column type is nil")
-	}
+func (d mysql) columnSQLTypeName(c Col) (string, error) {
 	if c.SQLType != "" {
 		return c.SQLType, nil
 	}
@@ -147,45 +139,42 @@ func (d mysql) columnSQLTypeName(c dialect.Col) (string, error) {
 	ftyp := c.Type
 
 	nullable := c.Nullable
-	if ftyp.Kind() == reflect.Ptr {
-		nullable = true
-		ftyp = ftyp.Elem()
-	}
-
 	var sqlType string
 	var def string
-	switch ftyp.Kind() {
-	case reflect.Bool:
+	switch c.Type {
+	case etlsql.TypeBoolean:
 		sqlType, def = "boolean", "DEFAULT false"
-	case reflect.Int, reflect.Int16, reflect.Int32:
+	case etlsql.TypeSmallInt:
+		sqlType, def = "smallint", "DEFAULT 0"
+	case etlsql.TypeUnsignedSmallInt:
+		sqlType, def = "unsigned smallint", "DEFAULT 0"
+	case etlsql.TypeInteger:
 		sqlType, def = "integer", "DEFAULT 0"
-	case reflect.Uint, reflect.Uint16, reflect.Uint32:
+	case etlsql.TypeUnsignedInteger:
 		sqlType, def = "unsigned integer", "DEFAULT 0"
-	case reflect.Int64:
+	case etlsql.TypeBigInt:
 		sqlType, def = "bigint", "DEFAULT 0"
-	case reflect.Uint64:
-		sqlType, def = "unsigned bigint", "DETAULT 0"
-	case reflect.Float32, reflect.Float64:
+	case etlsql.TypeUnsignedBigInt:
+		sqlType, def = "unsigned bigint", "DEFAULT 0"
+	case etlsql.TypeReal:
 		sqlType, def = "float", "DEFAULT 0.0"
-	case reflect.String: // or blob?
+	case etlsql.TypeDouble:
+		sqlType, def = "double", "DEFAULT 0.0"
+	case etlsql.TypeVarchar:
 		def = "DEFAULT ''"
-		sqlType = "text"
+		sqlType = "varchar" // defaultSize?
 		if c.Length > 0 {
 			sqlType = fmt.Sprintf("varchar(%d)", c.Length)
 		}
-	case reflect.Struct:
-		switch ftyp {
-		case timeTyp:
-			nullable = true
-			// sqlType,def = "datetime","01-01-1970 00:00:00"
-			sqlType = "datetime"
-		case apdDecimalTyp:
-			sqlType = "decimal"
-			if c.Scale != 0 {
-				sqlType += fmt.Sprintf("(10,%d)", c.Scale)
-			}
-			def = "DEFAULT 0.0"
+	case etlsql.TypeTimestamp:
+		nullable = true
+		sqlType = "datetime"
+	case etlsql.TypeDecimal:
+		sqlType = "decimal"
+		if c.Scale != 0 {
+			sqlType += fmt.Sprintf("(10,%d)", c.Scale)
 		}
+		def = "DEFAULT 0.0"
 	}
 
 	if sqlType == "" {
