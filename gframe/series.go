@@ -149,6 +149,7 @@ func (s Series) Data() any {
 func (s Series) Int(i int) int         { return conv.Conv(0, s.At(i)) }
 func (s Series) Int32(i int) int32     { return conv.Conv(int32(0), s.At(i)) }
 func (s Series) Int64(i int) int64     { return conv.Conv(int64(0), s.At(i)) }
+func (s Series) Float32(i int) float32 { return conv.Conv(float32(0), s.At(i)) }
 func (s Series) Float64(i int) float64 { return conv.Conv(float64(0), s.At(i)) }
 func (s Series) String(i int) string   { return conv.ToString(s.At(i)) }
 
@@ -162,12 +163,32 @@ func (s Series) AsInt() []int {
 	return ret
 }
 
+// AsInt32 converts the series to a int32 slice, if the value can't be converted
+// it will be set as the zero value.
+func (s Series) AsInt32() []int32 {
+	ret := make([]int32, s.Len())
+	for i := 0; i < s.Len(); i++ {
+		ret[i] = s.Int32(i)
+	}
+	return ret
+}
+
 // AsInt64 converts the series to a int64 slice, if the value can't be converted
 // it will be set as the zero value.
 func (s Series) AsInt64() []int64 {
 	ret := make([]int64, s.Len())
 	for i := 0; i < s.Len(); i++ {
 		ret[i] = s.Int64(i)
+	}
+	return ret
+}
+
+// AsFloat32 converts the series to a float32 slice, if the value can't be
+// converted it will be set as the zero value.
+func (s Series) AsFloat32() []float32 {
+	ret := make([]float32, s.Len())
+	for i := 0; i < s.Len(); i++ {
+		ret[i] = s.Float32(i)
 	}
 	return ret
 }

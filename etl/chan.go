@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"sync"
 )
 
 var ErrCancelled = errors.New("iterator cancelled")
@@ -35,22 +34,18 @@ func MakeGen[T any](g Gen[T]) Iter {
 		}
 	}
 
-	runner := func() {
-		go func() {
-			defer close(ch)
-			if err := g.Run(ictx, yield); err != nil {
-				select {
-				case <-ictx.Done():
-				case ch <- msg[T]{err: err}:
-				}
+	go func() {
+		defer close(ch)
+		if err := g.Run(ictx, yield); err != nil {
+			select {
+			case <-ictx.Done():
+			case ch <- msg[T]{err: err}:
 			}
-		}()
-	}
-	once := sync.Once{}
+		}
+	}()
 
 	return MakeIter(Custom[T]{
 		Next: func(ctx context.Context) (T, error) {
-			once.Do(runner)
 			var z T
 			select {
 			case <-ctx.Done():

@@ -68,6 +68,12 @@ func Conv[T Numbers](def T, v any) T {
 		return T(v)
 	case uint64:
 		return T(v)
+	// TODO: add more pointer to native types
+	case *int8:
+		if v == nil {
+			return def
+		}
+		return T(*v)
 	default: // returns default on no conversion possible
 		// Extra case in case if it is a pointer we dereference it
 		// and try again

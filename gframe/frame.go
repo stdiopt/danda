@@ -110,11 +110,15 @@ func (f Frame) Iter() etl.Iter {
 }
 
 // Series returns the series identified by n of the dataframe.
-func (f Frame) Series(n string) Series {
-	for _, s := range f.series {
-		if s.name == n {
-			return s
+func (f Frame) SeriesAt(n IntOrString) Series {
+	switch v := n.(type) {
+	case int:
+		if v < 0 || v >= len(f.series) {
+			return Series{}
 		}
+		return f.series[v]
+	case string:
+		return f.seriesByName(v)
 	}
 	return Series{}
 }
@@ -350,7 +354,7 @@ func (f Frame) String() string {
 		if i != 0 {
 			fmt.Fprint(buf, " | ")
 		}
-		fmt.Fprintf(buf, " %-*s", colLen[i], s.Name())
+		fmt.Fprintf(buf, "%-*s", colLen[i], s.Name())
 	}
 	fmt.Fprintf(buf, "\n")
 
@@ -359,7 +363,7 @@ func (f Frame) String() string {
 		if i != 0 {
 			fmt.Fprint(buf, " | ")
 		}
-		fmt.Fprintf(buf, " %-*T", colLen[i], s.At(0))
+		fmt.Fprintf(buf, "%-*T", colLen[i], s.At(0))
 	}
 	fmt.Fprintf(buf, "\n")
 
@@ -368,7 +372,7 @@ func (f Frame) String() string {
 		if i != 0 {
 			fmt.Fprint(buf, "-|-")
 		}
-		fmt.Fprintf(buf, "-%s", strings.Repeat("-", colLen[i]))
+		fmt.Fprintf(buf, "%s", strings.Repeat("-", colLen[i]))
 	}
 	fmt.Fprintf(buf, "\n")
 
@@ -379,7 +383,7 @@ func (f Frame) String() string {
 				fmt.Fprint(buf, " | ")
 			}
 			val := fmt.Sprint(conv.Deref(f.series[ci].At(ri)))
-			fmt.Fprintf(buf, " %-*v", colLen[ci], val)
+			fmt.Fprintf(buf, "%-*v", colLen[ci], val)
 		}
 		fmt.Fprintf(buf, "\n")
 	}
@@ -396,7 +400,7 @@ func (f Frame) clone() Frame {
 
 // New implementations, to be moved to a proper place
 
-func (f Frame) seriesAt(s string) int {
+func (f Frame) seriesIndexOf(s string) int {
 	for i, series := range f.series {
 		if series.name == s {
 			return i
@@ -405,13 +409,22 @@ func (f Frame) seriesAt(s string) int {
 	return -1
 }
 
+func (f Frame) seriesByName(n string) Series {
+	for _, s := range f.series {
+		if s.name == n {
+			return s
+		}
+	}
+	return Series{}
+}
+
 // AppendRows appends rows to the frame by mapping the row fields into the proper series
 func (f Frame) AppendRows(rows ...Row) Frame {
 	nd := f.clone()
 	for _, row := range rows {
 		l := nd.Len()
 		for _, ff := range row {
-			si := nd.seriesAt(ff.Name)
+			si := nd.seriesIndexOf(ff.Name)
 			if si == -1 {
 				s := Series{name: ff.Name}.WithValues(l, ff.Value)
 				nd.series = append(nd.series, s)
