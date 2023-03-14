@@ -12,6 +12,7 @@ import (
 	"github.com/fraugster/parquet-go/parquet"
 	"github.com/fraugster/parquet-go/parquetschema"
 	"github.com/stdiopt/danda/drow"
+	"github.com/stdiopt/danda/util/conv"
 )
 
 type drowUnmarshaler struct {
@@ -123,6 +124,12 @@ func (u *drowUnmarshaler) UnmarshalParquet(obj interfaces.UnmarshalObject) error
 					a := apd.NewWithBigInt(bi, int32(*ch.SchemaElement.Scale))
 					v = a
 				}
+			case parquet.ConvertedType_DATE:
+				if isNil {
+					v = (*time.Time)(nil)
+					break
+				}
+				v = time.Unix(0, int64(v.(int32))*int64(time.Hour*24))
 			default:
 				log.Println("Missing converted:", ch.SchemaElement.GetConvertedType())
 			}
@@ -149,12 +156,24 @@ type drowMarshaler struct {
 func (m *drowMarshaler) MarshalParquet(obj interfaces.MarshalObject) error {
 	for _, f := range m.row {
 		e := obj.AddField(f.Name)
-		switch v := f.Value.(type) {
+		v := f.Value
+
+		v = conv.Deref(v)
+		if v == nil {
+			continue
+		}
+		switch v := v.(type) {
 		// Maybe reflective way, slower but shorter
-		case *string:
-			if v != nil {
-				e.SetByteArray([]byte(*v))
-			}
+		/*
+			case *int8:
+				if v != nil {
+					e.SetInt32(int32(*v))
+				}
+			case *string:
+				if v != nil {
+					e.SetByteArray([]byte(*v))
+				}
+		*/
 		case string:
 			e.SetByteArray([]byte(v))
 		case int8:
@@ -185,8 +204,10 @@ func (m *drowMarshaler) MarshalParquet(obj interfaces.MarshalObject) error {
 			e.SetBool(v)
 		case time.Time:
 			e.SetInt64(v.UnixMilli())
+		// case apd.Decimal:
+		//	e.SetByteArray(v.Bytes())
 		default:
-			return fmt.Errorf("unsupported type: %T", v)
+			return fmt.Errorf("MarshalParquet: unsupported type: %T", v)
 		}
 	}
 	return nil
@@ -258,19 +279,16 @@ func drowSchemaFrom(r drow.Row) (*parquetschema.SchemaDefinition, error) {
 			}
 		// Add APD
 		case reflect.Struct:
-			if ityp != reflect.TypeOf(time.Time{}) {
-				return nil, fmt.Errorf("unsupported type %v", ityp)
+			switch {
+			case ityp == reflect.TypeOf(time.Time{}):
+				ptyp = parquet.Type_INT64
+				convTyp = convType(parquet.ConvertedType_TIMESTAMP_MILLIS)
+			case ityp == reflect.TypeOf(apd.Decimal{}):
+				ptyp = parquet.Type_BYTE_ARRAY
+				convTyp = convType(parquet.ConvertedType_DECIMAL)
+			default:
+				return nil, fmt.Errorf("etlparquet Unmarshal: unsupported type %v", ityp)
 			}
-			ptyp = parquet.Type_INT64
-			convTyp = convType(parquet.ConvertedType_TIMESTAMP_MILLIS)
-			/*logTyp = &parquet.LogicalType{
-				TIMESTAMP: &parquet.TimestampType{
-					IsAdjustedToUTC: true,
-					Unit: &parquet.TimeUnit{
-						NANOS: &parquet.NanoSeconds{},
-					},
-				},
-			}*/
 		}
 		col := &parquetschema.ColumnDefinition{
 			SchemaElement: &parquet.SchemaElement{

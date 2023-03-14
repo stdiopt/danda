@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/stdiopt/danda/etl"
+	"github.com/stdiopt/danda/etl/etlio"
 	"gocloud.dev/blob"
 )
 
@@ -121,4 +122,33 @@ func BlobGetObject(objURL string) etl.Iter {
 		},
 		Close: rd.Close,
 	})
+}
+
+func BlobPutObject(it etl.Iter, objURL string) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	u, err := url.Parse(objURL)
+	if err != nil {
+		return err
+	}
+	// in the form of '{scheme}://{host}/{prefix}'
+	burl := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
+	if u.RawQuery != "" {
+		burl += "?" + u.RawQuery
+	}
+	b, err := blob.OpenBucket(ctx, burl)
+	if err != nil {
+		return err
+	}
+	defer b.Close()
+
+	key := strings.Trim(u.Path, "/")
+	wr, err := b.NewWriter(ctx, key, nil)
+	if err != nil {
+		return err
+	}
+	defer wr.Close()
+	_, err = io.Copy(wr, etlio.AsReader(it))
+	return err
 }

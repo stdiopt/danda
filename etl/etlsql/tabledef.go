@@ -121,6 +121,13 @@ func NewTableDef(name string, cols ...ColDef) TableDef {
 	return TableDef{Name: name}.WithColumns(cols...)
 }
 
+func (d TableDef) WithName(name string) TableDef {
+	return TableDef{
+		Name:    name,
+		Columns: append([]ColDef{}, d.Columns...),
+	}
+}
+
 func DefFromSQLTypes(name string, typs []*sql.ColumnType) (TableDef, error) {
 	cols := []ColDef{}
 	for _, t := range typs {
