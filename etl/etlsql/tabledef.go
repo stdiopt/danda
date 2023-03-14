@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
+	"log"
 	"reflect"
 	"time"
 
@@ -288,12 +289,20 @@ func typFromGo(v any) Type {
 	switch typ.Kind() {
 	case reflect.Ptr:
 		return typFromGo(typ.Elem())
+	case reflect.Uint8:
+		return TypeUnsignedSmallInt
 	case reflect.Int8:
 		return TypeSmallInt
+	case reflect.Uint16:
+		return TypeUnsignedInteger
 	case reflect.Int16:
 		return TypeInteger
+	case reflect.Uint32:
+		return TypeUnsignedInteger
 	case reflect.Int32:
 		return TypeInteger
+	case reflect.Uint64:
+		return TypeUnsignedBigInt
 	case reflect.Int64:
 		return TypeBigInt
 	case reflect.Int:
@@ -314,6 +323,7 @@ func typFromGo(v any) Type {
 			return TypeDecimal
 		}
 	default:
+		log.Println("Unknown type", typ)
 		return TypeUnknown
 	}
 	return TypeUnknown
