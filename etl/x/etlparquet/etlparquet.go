@@ -62,7 +62,7 @@ func DecodeFile[T any](it Iter) Iter {
 func Decode[T any](it Iter) Iter {
 	return etl.MakeGen(etl.Gen[T]{
 		Run: func(ctx context.Context, yield etl.Y[T]) error {
-			data, err := etlio.ReadAll(ctx, it)
+			data, err := etlio.ReadAllContext(ctx, it)
 			if err != nil {
 				return err
 			}

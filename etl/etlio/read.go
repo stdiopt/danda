@@ -7,7 +7,12 @@ import (
 	"github.com/stdiopt/danda/etl"
 )
 
-func ReadAll(ctx context.Context, it Iter) ([]byte, error) {
+// ReadAll reads all data from a []byte iterator
+func ReadAll(it Iter) ([]byte, error) {
+	return ReadAllContext(context.Background(), it)
+}
+
+func ReadAllContext(ctx context.Context, it Iter) ([]byte, error) {
 	ret := []byte{}
 	for {
 		b, err := it.Next(ctx)

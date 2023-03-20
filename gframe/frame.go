@@ -198,9 +198,30 @@ func (f Frame) Slice(start, end int) Frame {
 // default is 5
 func (f Frame) Head(n ...int) Frame {
 	if len(n) == 0 {
-		return f.Slice(0, 5)
+		return f.Head(5)
 	}
-	return f.Slice(0, n[0])
+	e := n[0]
+	if e > f.Len() {
+		e = f.Len()
+	}
+	return f.Slice(0, e)
+}
+
+// Tail returns the last n rows of the dataframe as a new dataframe
+// default is 5
+func (f Frame) Tail(n ...int) Frame {
+	if len(n) == 0 {
+		return f.Tail(5)
+	}
+	b := f.Len() - n[0]
+	if b < 0 {
+		b = 0
+	}
+	e := b + n[0]
+	if e > f.Len() {
+		e = f.Len()
+	}
+	return f.Slice(b, e)
 }
 
 // Select returns a new dataframe with the selected series

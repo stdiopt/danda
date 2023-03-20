@@ -1,6 +1,9 @@
 package gframe
 
-import "sort"
+import (
+	"sort"
+	"time"
+)
 
 func (f Frame) OrderBy() FrameOrderBy {
 	return FrameOrderBy{frame: f}
@@ -126,6 +129,8 @@ func less(v1, v2 any) bool {
 		return v1 < v2.(string)
 	case bool:
 		return !v1 && v2.(bool)
+	case time.Time:
+		return v1.Before(v2.(time.Time))
 	default:
 		panic("not supported type")
 	}
