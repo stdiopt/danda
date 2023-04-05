@@ -51,7 +51,6 @@ func FromRows(rows []Row) Frame {
 
 // FromIter loads an iterator into a data frame.
 func FromIter(it iterator) Frame {
-	defer it.Close()
 	rs := rowFrameBuilder{}
 	for {
 		var row Row

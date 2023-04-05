@@ -30,7 +30,7 @@ var (
 	// apdDecimalTyp = reflect.TypeOf(apd.Decimal{})
 )
 
-func ColumnGoType(ct *sql.ColumnType) (reflect.Type, error) {
+func ColumnGoTypeDef(ct *sql.ColumnType) (reflect.Type, error) {
 	t := ct.ScanType()
 	switch t {
 	case sqlNullBool:

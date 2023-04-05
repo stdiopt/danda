@@ -3,6 +3,7 @@ package psql
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"reflect"
 	"time"
@@ -19,11 +20,13 @@ type (
 	ColDef   = etlsql.ColDef
 )
 
-var Dialect = &psql{}
+var Dialect = psql{}
 
 type psql struct{}
 
-func (p *psql) TableDef(ctx context.Context, q etlsql.SQLQuery, name string) (TableDef, error) {
+func (psql) String() string { return "psql" }
+
+func (d psql) TableDef(ctx context.Context, q etlsql.SQLQuery, name string) (TableDef, error) {
 	tableQry := `
 		SELECT count(table_name)
 		FROM information_schema.tables
@@ -51,16 +54,16 @@ func (p *psql) TableDef(ctx context.Context, q etlsql.SQLQuery, name string) (Ta
 		return TableDef{}, fmt.Errorf("fetch columns: %w", err)
 	}
 
-	return etlsql.DefFromSQLTypes(name, typs)
+	return etlsql.DefFromSQLTypes(name, typs, d.ColumnGoType)
 }
 
-func (p *psql) CreateTable(ctx context.Context, q etlsql.SQLExec, def TableDef) error {
+func (d psql) CreateTable(ctx context.Context, q etlsql.SQLExec, def TableDef) error {
 	// Create statement
 	params := []any{}
 	qry := &bytes.Buffer{}
 	fmt.Fprintf(qry, "CREATE TABLE IF NOT EXISTS \"%s\" (\n", def.Name)
 	for i, c := range def.Columns {
-		sqlType, err := p.columnSQLTypeName(c)
+		sqlType, err := d.columnSQLTypeName(c)
 		if err != nil {
 			return fmt.Errorf("field '%s' %w", c.Name, err)
 		}
@@ -80,13 +83,13 @@ func (p *psql) CreateTable(ctx context.Context, q etlsql.SQLExec, def TableDef) 
 	return nil
 }
 
-func (p *psql) AddColumns(ctx context.Context, q etlsql.SQLExec, def TableDef) error {
+func (d psql) AddColumns(ctx context.Context, q etlsql.SQLExec, def TableDef) error {
 	if len(def.Columns) == 0 {
 		return nil
 	}
 
 	for _, col := range def.Columns {
-		sqlType, err := p.columnSQLTypeName(col)
+		sqlType, err := d.columnSQLTypeName(col)
 		if err != nil {
 			return fmt.Errorf("field '%s' %w", col.Name, err)
 		}
@@ -105,7 +108,7 @@ func (p *psql) AddColumns(ctx context.Context, q etlsql.SQLExec, def TableDef) e
 	return nil
 }
 
-func (p *psql) Insert(ctx context.Context, db etlsql.SQLExec, def TableDef, rows []etlsql.Row) error {
+func (d psql) Insert(ctx context.Context, db etlsql.SQLExec, def TableDef, rows []etlsql.Row) error {
 	// some psql engines allows max 64k params per query but to be safe we
 	// will use 32k, eventually we can use a config to set this value
 	maxParams := 32767
@@ -120,13 +123,22 @@ func (p *psql) Insert(ctx context.Context, db etlsql.SQLExec, def TableDef, rows
 		}
 		offs := offset
 		eg.Go(func() error {
-			return p.insert(ctx, db, def, rows[offs:end])
+			return d.insert(ctx, db, def, rows[offs:end])
 		})
 	}
 	return eg.Wait()
 }
 
-func (p *psql) insert(ctx context.Context, q etlsql.SQLExec, def TableDef, rows []etlsql.Row) error {
+func (d psql) ColumnGoType(ct *sql.ColumnType) (reflect.Type, error) {
+	switch ct.DatabaseTypeName() {
+	case "NUMERIC":
+		return apdDecimalTyp, nil
+	default:
+		return etlsql.ColumnGoTypeDef(ct)
+	}
+}
+
+func (d psql) insert(ctx context.Context, q etlsql.SQLExec, def TableDef, rows []etlsql.Row) error {
 	qryBuf := &bytes.Buffer{}
 	insQ := fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES ", def.Name, def.StrJoin(", "))
 	qryBuf.WriteString(insQ)
@@ -158,7 +170,7 @@ var (
 	apdDecimalTyp = reflect.TypeOf(apd.Decimal{})
 )
 
-func (p *psql) columnSQLTypeName(c ColDef) (string, error) {
+func (d *psql) columnSQLTypeName(c ColDef) (string, error) {
 	if c.SQLType != "" {
 		return c.SQLType, nil
 	}

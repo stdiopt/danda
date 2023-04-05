@@ -129,10 +129,17 @@ func (d TableDef) WithName(name string) TableDef {
 	}
 }
 
-func DefFromSQLTypes(name string, typs []*sql.ColumnType) (TableDef, error) {
+type sqlTypeSolver func(*sql.ColumnType) (reflect.Type, error)
+
+func DefFromSQLTypes(name string, typs []*sql.ColumnType, solverOpt ...sqlTypeSolver) (TableDef, error) {
+	var solver sqlTypeSolver
+	solver = ColumnGoTypeDef
+	if len(solverOpt) > 0 {
+		solver = solverOpt[0]
+	}
 	cols := []ColDef{}
 	for _, t := range typs {
-		typ, err := ColumnGoType(t)
+		typ, err := solver(t)
 		if err != nil {
 			return TableDef{}, err
 		}

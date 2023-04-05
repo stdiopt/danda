@@ -17,6 +17,8 @@ type Numbers interface {
 func Conv[T Numbers](def T, v any) T {
 	var z T
 	switch v := v.(type) {
+	case nil:
+		return def
 	// Convert to string first, then parse
 	// might not be ideal since we could read a number from binary?
 	case []byte:
@@ -79,6 +81,9 @@ func Conv[T Numbers](def T, v any) T {
 		// and try again
 		val := reflect.ValueOf(v)
 		if val.Kind() == reflect.Ptr {
+			if val.IsZero() {
+				return def
+			}
 			val = val.Elem()
 			return Conv(def, val.Interface())
 		}

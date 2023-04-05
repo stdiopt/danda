@@ -4,6 +4,9 @@ import (
 	"reflect"
 )
 
+// Deref returns the value of the pointer v
+// if the pointer is nil then it returns untyped nil
+// nil != (*int)(nil)
 func Deref(v any) any {
 	if v == nil {
 		return nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"reflect"
 
 	"github.com/stdiopt/danda/drow"
 	"github.com/stdiopt/danda/etl"
@@ -23,6 +24,7 @@ type SQLExec interface {
 }
 
 type Dialect interface {
+	ColumnGoType(ct *sql.ColumnType) (reflect.Type, error)
 	TableDef(ctx context.Context, db SQLQuery, name string) (TableDef, error)
 	CreateTable(ctx context.Context, db SQLExec, table TableDef) error
 	AddColumns(ctx context.Context, db SQLExec, table TableDef) error
@@ -95,7 +97,7 @@ func (d DB) Query(query string, args ...any) Iter {
 				return nil, etl.EOI
 			}
 
-			return scanRow(rows, typs)
+			return d.scanRow(rows, typs)
 		},
 		Close: func() error {
 			if rows == nil {

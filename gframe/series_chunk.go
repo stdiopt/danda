@@ -3,6 +3,7 @@ package gframe
 import (
 	"fmt"
 	"sort"
+	"unsafe"
 )
 
 // Generic type is only here to ensure same type over.
@@ -57,6 +58,16 @@ func (s SeriesData[T]) Len() int {
 		l := c.offset + len(c.data)
 		if l > m {
 			m = l
+		}
+	}
+	return m
+}
+
+func (s SeriesData[T]) Size() int {
+	m := 0
+	for _, c := range s.chunks {
+		for _, v := range c.data {
+			m += int(unsafe.Sizeof(v))
 		}
 	}
 	return m

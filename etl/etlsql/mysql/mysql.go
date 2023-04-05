@@ -3,8 +3,10 @@ package mysql
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/cockroachdb/apd"
@@ -18,11 +20,13 @@ type (
 	Col   = etlsql.ColDef
 )
 
-var Dialect = &mysql{}
+var Dialect = mysql{}
 
 type mysql struct{}
 
-func (d *mysql) TableDef(ctx context.Context, db etlsql.SQLQuery, name string) (Table, error) {
+func (mysql) String() string { return "mysql" }
+
+func (d mysql) TableDef(ctx context.Context, db etlsql.SQLQuery, name string) (Table, error) {
 	tableQry := `
 			SELECT count(table_name) 
 			FROM information_schema.tables 
@@ -50,10 +54,10 @@ func (d *mysql) TableDef(ctx context.Context, db etlsql.SQLQuery, name string) (
 		return Table{}, fmt.Errorf("fetch columns: %w", err)
 	}
 
-	return etlsql.DefFromSQLTypes(name, typs)
+	return etlsql.DefFromSQLTypes(name, typs, d.ColumnGoType)
 }
 
-func (d *mysql) CreateTable(ctx context.Context, db etlsql.SQLExec, def Table) error {
+func (d mysql) CreateTable(ctx context.Context, db etlsql.SQLExec, def Table) error {
 	// Create statement
 	params := []any{}
 	qry := &bytes.Buffer{}
@@ -79,12 +83,12 @@ func (d *mysql) CreateTable(ctx context.Context, db etlsql.SQLExec, def Table) e
 	return nil
 }
 
-func (p *mysql) AddColumns(ctx context.Context, db etlsql.SQLExec, def Table) error {
+func (d mysql) AddColumns(ctx context.Context, db etlsql.SQLExec, def Table) error {
 	if len(def.Columns) == 0 {
 		return nil
 	}
 	for _, col := range def.Columns {
-		sqlType, err := p.columnSQLTypeName(col)
+		sqlType, err := d.columnSQLTypeName(col)
 		if err != nil {
 			return fmt.Errorf("field '%s' %w", col.Name, err)
 		}
@@ -103,7 +107,7 @@ func (p *mysql) AddColumns(ctx context.Context, db etlsql.SQLExec, def Table) er
 	return nil
 }
 
-func (p *mysql) Insert(ctx context.Context, db etlsql.SQLExec, def Table, rows []etlsql.Row) error {
+func (d mysql) Insert(ctx context.Context, db etlsql.SQLExec, def Table, rows []etlsql.Row) error {
 	qryBuf := &bytes.Buffer{}
 	fmt.Fprintf(qryBuf, "INSERT INTO `%s` (%s) VALUES ", def.Name, def.StrJoin(", "))
 	for i := 0; i < len(rows); i++ {
@@ -126,8 +130,22 @@ func (p *mysql) Insert(ctx context.Context, db etlsql.SQLExec, def Table, rows [
 	return err
 }
 
+func (d mysql) ColumnGoType(ct *sql.ColumnType) (reflect.Type, error) {
+	switch strings.ToUpper(ct.DatabaseTypeName()) {
+	// need to tackle this
+	// case "BIT":
+	//	return byteTyp, nil
+	case "DECIMAL":
+		return apdDecimalTyp, nil
+	default:
+		return etlsql.ColumnGoTypeDef(ct)
+	}
+}
+
 var (
 	timeTyp       = reflect.TypeOf(time.Time{})
+	boolTyp       = reflect.TypeOf(bool(false))
+	byteTyp       = reflect.TypeOf(byte(0))
 	apdDecimalTyp = reflect.TypeOf(apd.Decimal{})
 )
 

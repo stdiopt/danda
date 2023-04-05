@@ -10,11 +10,11 @@ import (
 	"github.com/stdiopt/danda/etl"
 )
 
-func scanRow(rows *sql.Rows, typs []*sql.ColumnType) (Row, error) {
+func (d DB) scanRow(rows *sql.Rows, typs []*sql.ColumnType) (Row, error) {
 	args := make([]interface{}, len(typs))
 	vals := make([]reflect.Value, len(typs))
 	for i, t := range typs {
-		typ, err := ColumnGoType(t)
+		typ, err := d.dialect.ColumnGoType(t)
 		if err != nil {
 			return nil, err
 		}

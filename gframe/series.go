@@ -11,6 +11,11 @@ type SeriesProvider interface {
 	Len() int
 	Data() any
 	At(int) any
+	// New data mem size?
+	Size() int
+
+	// Could be optionals for optimization purposes since most of this can
+	// be done with the previous methods
 
 	Clone() SeriesProvider
 	WithValues(off int, data ...any) SeriesProvider
@@ -83,6 +88,13 @@ func (s Series) Len() int {
 		return 0
 	}
 	return s.provider.Len()
+}
+
+func (s Series) Size() int {
+	if s.provider == nil {
+		return 0
+	}
+	return s.provider.Size()
 }
 
 // At returns the element at index i or nil if i is out of bounds
