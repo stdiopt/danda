@@ -52,13 +52,13 @@ func (d DB) scanRow(rows *sql.Rows, typs []*sql.ColumnType) (Row, error) {
 }
 
 // DefFromRows scans a slice of rows and returns a TableDef with the columns.
-func DefFromRows(name string, rows []Row) (TableDef, error) {
+func DefFromRows(rows []Row) (TableDef, error) {
 	it := etl.Values(rows...)
-	return DefFromIterRows(name, it)
+	return DefFromIterRows(it)
 }
 
-func DefFromIterRows(name string, it etl.Iter) (TableDef, error) {
-	def := TableDef{Name: name}
+func DefFromIterRows(it etl.Iter) (TableDef, error) {
+	def := TableDef{}
 	err := etl.Consume(it, func(row drow.Row) error {
 		for _, f := range row {
 			name := strings.ToLower(f.Name)

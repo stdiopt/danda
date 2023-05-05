@@ -64,7 +64,7 @@ func (o *insertOptions) apply(opts ...insertOptFunc) {
 	}
 }
 
-func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
+func (d DB) Insert(it Iter, schema, table string, opts ...insertOptFunc) error {
 	if d.err != nil {
 		return d.err
 	}
@@ -76,7 +76,7 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 	opt.apply(opts...)
 
 	ctx := context.Background()
-	tableDef, err := d.dialect.TableDef(ctx, d.q, table)
+	tableDef, err := d.dialect.TableDef(ctx, d.q, schema, table)
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 		if len(rows) == 0 {
 			return nil
 		}
-		def, err := DefFromRows(table, rows)
+		def, err := DefFromRows(rows)
 		if err != nil {
 			return err
 		}
@@ -122,7 +122,7 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 
 		// Exceptional case, we attept to reload the table under the transaction if columns are empty.
 		if tableDef.Len() == 0 {
-			tableDef, err = d.dialect.TableDef(ctx, tx, table)
+			tableDef, err = d.dialect.TableDef(ctx, tx, schema, table)
 			if err != nil {
 				return err
 			}
@@ -135,9 +135,9 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 				if opt.ddlSync < DDLCreate {
 					return fmt.Errorf("etlsql.DB.Insert: table '%s' does not exists", table)
 				}
-				err = d.dialect.CreateTable(ctx, tx, def)
+				err = d.dialect.CreateTable(ctx, tx, schema, table, def)
 			case opt.ddlSync == DDLAddColumns:
-				err = d.dialect.AddColumns(ctx, tx, missing)
+				err = d.dialect.AddColumns(ctx, tx, schema, table, missing)
 			}
 			if err != nil {
 				return err
@@ -146,7 +146,7 @@ func (d DB) Insert(it Iter, table string, opts ...insertOptFunc) error {
 		}
 		rows = tableDef.NormalizeRows(rows)
 
-		if err := d.dialect.Insert(ctx, tx, tableDef, rows); err != nil {
+		if err := d.dialect.Insert(ctx, tx, schema, table, tableDef, rows); err != nil {
 			return err
 		}
 

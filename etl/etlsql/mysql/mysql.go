@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"time"
 
 	"github.com/cockroachdb/apd"
 	"github.com/stdiopt/danda/drow"
@@ -26,13 +25,16 @@ type mysql struct{}
 
 func (mysql) String() string { return "mysql" }
 
-func (d mysql) TableDef(ctx context.Context, db etlsql.SQLQuery, name string) (Table, error) {
+func (d mysql) TableDef(ctx context.Context, db etlsql.SQLQuery, dbname, name string) (Table, error) {
+	if dbname == "" {
+		dbname = "DATABASE()"
+	}
 	tableQry := `
-			SELECT count(table_name) 
-			FROM information_schema.tables 
-			WHERE table_schema = 'DATABASE()' 
+			SELECT count(table_name)
+			FROM information_schema.tables
+			WHERE table_schema = ?
 				AND table_name = ?`
-	row := db.QueryRowContext(ctx, tableQry, name)
+	row := db.QueryRowContext(ctx, tableQry, dbname, name)
 	var c int
 	if err := row.Scan(&c); err != nil {
 		return Table{}, err
@@ -42,7 +44,13 @@ func (d mysql) TableDef(ctx context.Context, db etlsql.SQLQuery, name string) (T
 	}
 
 	// Load table schema here
-	qry := fmt.Sprintf("SELECT * FROM %s LIMIT 0", name)
+	var qry string
+	if dbname == "" {
+		qry = fmt.Sprintf("SELECT * FROM `%s` LIMIT 0", name)
+	} else {
+		qry = fmt.Sprintf("SELECT * FROM `%s`.`%s` LIMIT 0", dbname, name)
+	}
+
 	rows, err := db.QueryContext(ctx, qry)
 	if err != nil {
 		return Table{}, fmt.Errorf("selecting table: %w", err)
@@ -54,14 +62,18 @@ func (d mysql) TableDef(ctx context.Context, db etlsql.SQLQuery, name string) (T
 		return Table{}, fmt.Errorf("fetch columns: %w", err)
 	}
 
-	return etlsql.DefFromSQLTypes(name, typs, d.ColumnGoType)
+	return etlsql.DefFromSQLTypes(typs, d.ColumnGoType)
 }
 
-func (d mysql) CreateTable(ctx context.Context, db etlsql.SQLExec, def Table) error {
+func (d mysql) CreateTable(ctx context.Context, db etlsql.SQLExec, dbname, name string, def Table) error {
 	// Create statement
 	params := []any{}
 	qry := &bytes.Buffer{}
-	fmt.Fprintf(qry, "CREATE TABLE IF NOT EXISTS `%s` (\n", def.Name)
+	if dbname == "" {
+		fmt.Fprintf(qry, "CREATE TABLE IF NOT EXISTS `%s` (\n", name)
+	} else {
+		fmt.Fprintf(qry, "CREATE TABLE IF NOT EXISTS `%s`.`%s` (\n", dbname, name)
+	}
 	for i, c := range def.Columns {
 		sqlType, err := d.columnSQLTypeName(c)
 		if err != nil {
@@ -83,7 +95,7 @@ func (d mysql) CreateTable(ctx context.Context, db etlsql.SQLExec, def Table) er
 	return nil
 }
 
-func (d mysql) AddColumns(ctx context.Context, db etlsql.SQLExec, def Table) error {
+func (d mysql) AddColumns(ctx context.Context, db etlsql.SQLExec, dbn, name string, def Table) error {
 	if len(def.Columns) == 0 {
 		return nil
 	}
@@ -94,10 +106,18 @@ func (d mysql) AddColumns(ctx context.Context, db etlsql.SQLExec, def Table) err
 		}
 
 		// in this case we allow null since we're adding a column
-		qry := fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN `%s` %s",
-			def.Name,
-			col.Name, sqlType,
-		)
+		var qry string
+		if dbn == "" {
+			qry = fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN `%s` %s",
+				name,
+				col.Name, sqlType,
+			)
+		} else {
+			qry = fmt.Sprintf("ALTER TABLE `%s`.`%s` ADD COLUMN `%s` %s",
+				dbn, name,
+				col.Name, sqlType,
+			)
+		}
 
 		_, err = db.ExecContext(ctx, qry)
 		if err != nil {
@@ -107,9 +127,13 @@ func (d mysql) AddColumns(ctx context.Context, db etlsql.SQLExec, def Table) err
 	return nil
 }
 
-func (d mysql) Insert(ctx context.Context, db etlsql.SQLExec, def Table, rows []etlsql.Row) error {
+func (d mysql) Insert(ctx context.Context, db etlsql.SQLExec, dbn, name string, def Table, rows []etlsql.Row) error {
 	qryBuf := &bytes.Buffer{}
-	fmt.Fprintf(qryBuf, "INSERT INTO `%s` (%s) VALUES ", def.Name, def.StrJoin(", "))
+	if dbn == "" {
+		fmt.Fprintf(qryBuf, "INSERT INTO `%s` (%s) VALUES ", name, def.StrJoin(", "))
+	} else {
+		fmt.Fprintf(qryBuf, "INSERT INTO `%s`.`%s` (%s) VALUES ", dbn, name, def.StrJoin(", "))
+	}
 	for i := 0; i < len(rows); i++ {
 		if i != 0 {
 			qryBuf.WriteString("),\n")
@@ -142,12 +166,10 @@ func (d mysql) ColumnGoType(ct *sql.ColumnType) (reflect.Type, error) {
 	}
 }
 
-var (
-	timeTyp       = reflect.TypeOf(time.Time{})
-	boolTyp       = reflect.TypeOf(bool(false))
-	byteTyp       = reflect.TypeOf(byte(0))
-	apdDecimalTyp = reflect.TypeOf(apd.Decimal{})
-)
+// timeTyp       = reflect.TypeOf(time.Time{})
+// boolTyp       = reflect.TypeOf(bool(false))
+// byteTyp       = reflect.TypeOf(byte(0))
+var apdDecimalTyp = reflect.TypeOf(apd.Decimal{})
 
 func (d mysql) columnSQLTypeName(c Col) (string, error) {
 	if c.SQLType != "" {

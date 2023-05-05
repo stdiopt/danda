@@ -25,10 +25,10 @@ type SQLExec interface {
 
 type Dialect interface {
 	ColumnGoType(ct *sql.ColumnType) (reflect.Type, error)
-	TableDef(ctx context.Context, db SQLQuery, name string) (TableDef, error)
-	CreateTable(ctx context.Context, db SQLExec, table TableDef) error
-	AddColumns(ctx context.Context, db SQLExec, table TableDef) error
-	Insert(ctx context.Context, db SQLExec, table TableDef, rows []Row) error
+	TableDef(ctx context.Context, db SQLQuery, schema, name string) (TableDef, error)
+	CreateTable(ctx context.Context, db SQLExec, schema, name string, table TableDef) error
+	AddColumns(ctx context.Context, db SQLExec, schema, name string, table TableDef) error
+	Insert(ctx context.Context, db SQLExec, schema, name string, table TableDef, rows []Row) error
 }
 
 type Q interface {

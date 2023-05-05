@@ -114,12 +114,23 @@ func (c ColDef) Zero() any {
 
 // TableDef represents an sql table definition.
 type TableDef struct {
-	Name    string
+	// Schema  string // only on supported dbs
+	// Name    string
 	Columns []ColDef
 }
 
-func NewTableDef(name string, cols ...ColDef) TableDef {
-	return TableDef{Name: name}.WithColumns(cols...)
+func NewTableDef(cols ...ColDef) TableDef {
+	return TableDef{
+		Columns: append([]ColDef{}, cols...),
+	}
+}
+
+/*func (d TableDef) WithSchemaName(name string) TableDef {
+	return TableDef{
+		Schema:  name,
+		Name:    d.Name,
+		Columns: append([]ColDef{}, d.Columns...),
+	}
 }
 
 func (d TableDef) WithName(name string) TableDef {
@@ -127,11 +138,11 @@ func (d TableDef) WithName(name string) TableDef {
 		Name:    name,
 		Columns: append([]ColDef{}, d.Columns...),
 	}
-}
+}*/
 
 type sqlTypeSolver func(*sql.ColumnType) (reflect.Type, error)
 
-func DefFromSQLTypes(name string, typs []*sql.ColumnType, solverOpt ...sqlTypeSolver) (TableDef, error) {
+func DefFromSQLTypes(typs []*sql.ColumnType, solverOpt ...sqlTypeSolver) (TableDef, error) {
 	var solver sqlTypeSolver
 	solver = ColumnGoTypeDef
 	if len(solverOpt) > 0 {
@@ -160,7 +171,6 @@ func DefFromSQLTypes(name string, typs []*sql.ColumnType, solverOpt ...sqlTypeSo
 		})
 	}
 	ret := TableDef{
-		Name:    name,
 		Columns: cols,
 	}
 	return ret, nil
@@ -183,7 +193,6 @@ func (d TableDef) Get(colName string) (ColDef, bool) {
 
 func (d TableDef) WithColumns(col ...ColDef) TableDef {
 	clone := TableDef{
-		Name:    d.Name,
 		Columns: append([]ColDef{}, d.Columns...),
 	}
 	for _, c := range col {
@@ -206,7 +215,7 @@ func (d TableDef) WithColumns(col ...ColDef) TableDef {
 
 // MissingOn returns a TableDef with missing columns from d2
 func (d TableDef) MissingOn(d2 TableDef) TableDef {
-	ret := TableDef{Name: d.Name}
+	ret := TableDef{}
 	for _, c := range d.Columns {
 		if d2.IndexOf(c.Name) == -1 {
 			ret.Columns = append(ret.Columns, c)
@@ -229,7 +238,6 @@ func (d TableDef) StrJoin(sep string) string {
 
 func (d TableDef) String() string {
 	buf := &bytes.Buffer{}
-	fmt.Fprintf(buf, "table %s\n", d.Name)
 	for _, c := range d.Columns {
 		nl := "null"
 		if !c.Nullable {

@@ -26,13 +26,17 @@ type psql struct{}
 
 func (psql) String() string { return "psql" }
 
-func (d psql) TableDef(ctx context.Context, q etlsql.SQLQuery, name string) (TableDef, error) {
+func (d psql) TableDef(ctx context.Context, q etlsql.SQLQuery, schema, name string) (TableDef, error) {
+	s := "public"
+	if schema != "" {
+		s = schema
+	}
 	tableQry := `
 		SELECT count(table_name)
 		FROM information_schema.tables
-		WHERE table_schema = 'public'
-			AND table_name = $1`
-	row := q.QueryRowContext(ctx, tableQry, name)
+		WHERE table_schema = $1
+			AND table_name = $2`
+	row := q.QueryRowContext(ctx, tableQry, s, name)
 	var c int
 	if err := row.Scan(&c); err != nil {
 		return TableDef{}, err
@@ -42,7 +46,13 @@ func (d psql) TableDef(ctx context.Context, q etlsql.SQLQuery, name string) (Tab
 	}
 
 	// Load table schema here
-	qry := fmt.Sprintf("SELECT * FROM %s LIMIT 0", name)
+	var qry string
+	if schema == "" {
+		qry = fmt.Sprintf(`SELECT * FROM "%s" LIMIT 0`, name)
+	} else {
+		qry = fmt.Sprintf(`SELECT * FROM "%s"."%s" LIMIT 0`, schema, name)
+	}
+
 	rows, err := q.QueryContext(ctx, qry)
 	if err != nil {
 		return TableDef{}, fmt.Errorf("selecting table: %w", err)
@@ -54,14 +64,19 @@ func (d psql) TableDef(ctx context.Context, q etlsql.SQLQuery, name string) (Tab
 		return TableDef{}, fmt.Errorf("fetch columns: %w", err)
 	}
 
-	return etlsql.DefFromSQLTypes(name, typs, d.ColumnGoType)
+	return etlsql.DefFromSQLTypes(typs, d.ColumnGoType)
 }
 
-func (d psql) CreateTable(ctx context.Context, q etlsql.SQLExec, def TableDef) error {
+func (d psql) CreateTable(ctx context.Context, q etlsql.SQLExec, schema, name string, def TableDef) error {
 	// Create statement
 	params := []any{}
 	qry := &bytes.Buffer{}
-	fmt.Fprintf(qry, "CREATE TABLE IF NOT EXISTS \"%s\" (\n", def.Name)
+
+	if schema == "" {
+		fmt.Fprintf(qry, "CREATE TABLE IF NOT EXISTS \"%s\" (\n", name)
+	} else {
+		fmt.Fprintf(qry, "CREATE TABLE IF NOT EXISTS \"%s\".\"%s\" (\n", schema, name)
+	}
 	for i, c := range def.Columns {
 		sqlType, err := d.columnSQLTypeName(c)
 		if err != nil {
@@ -83,7 +98,7 @@ func (d psql) CreateTable(ctx context.Context, q etlsql.SQLExec, def TableDef) e
 	return nil
 }
 
-func (d psql) AddColumns(ctx context.Context, q etlsql.SQLExec, def TableDef) error {
+func (d psql) AddColumns(ctx context.Context, q etlsql.SQLExec, schema, name string, def TableDef) error {
 	if len(def.Columns) == 0 {
 		return nil
 	}
@@ -94,11 +109,19 @@ func (d psql) AddColumns(ctx context.Context, q etlsql.SQLExec, def TableDef) er
 			return fmt.Errorf("field '%s' %w", col.Name, err)
 		}
 
+		var qry string
 		// in this case we allow null since we're adding a column
-		qry := fmt.Sprintf(`ALTER TABLE "%s" ADD COLUMN "%s" %s`,
-			def.Name,
-			col.Name, sqlType,
-		)
+		if schema == "" {
+			qry = fmt.Sprintf(`ALTER TABLE "%s" ADD COLUMN "%s" %s`,
+				name,
+				col.Name, sqlType,
+			)
+		} else {
+			qry = fmt.Sprintf(`ALTER TABLE "%s"."%s" ADD COLUMN "%s" %s`,
+				schema, name,
+				col.Name, sqlType,
+			)
+		}
 
 		_, err = q.ExecContext(ctx, qry)
 		if err != nil {
@@ -108,7 +131,7 @@ func (d psql) AddColumns(ctx context.Context, q etlsql.SQLExec, def TableDef) er
 	return nil
 }
 
-func (d psql) Insert(ctx context.Context, db etlsql.SQLExec, def TableDef, rows []etlsql.Row) error {
+func (d psql) Insert(ctx context.Context, db etlsql.SQLExec, schema, name string, def TableDef, rows []etlsql.Row) error {
 	// some psql engines allows max 64k params per query but to be safe we
 	// will use 32k, eventually we can use a config to set this value
 	maxParams := 32767
@@ -123,7 +146,7 @@ func (d psql) Insert(ctx context.Context, db etlsql.SQLExec, def TableDef, rows 
 		}
 		offs := offset
 		eg.Go(func() error {
-			return d.insert(ctx, db, def, rows[offs:end])
+			return d.insert(ctx, db, schema, name, def, rows[offs:end])
 		})
 	}
 	return eg.Wait()
@@ -138,9 +161,15 @@ func (d psql) ColumnGoType(ct *sql.ColumnType) (reflect.Type, error) {
 	}
 }
 
-func (d psql) insert(ctx context.Context, q etlsql.SQLExec, def TableDef, rows []etlsql.Row) error {
+func (d psql) insert(ctx context.Context, q etlsql.SQLExec, schema, name string, def TableDef, rows []etlsql.Row) error {
 	qryBuf := &bytes.Buffer{}
-	insQ := fmt.Sprintf("INSERT INTO \"%s\" (%s) VALUES ", def.Name, def.StrJoin(", "))
+	var insQ string
+	if schema == "" {
+		insQ = fmt.Sprintf(`INSERT INTO "%s" (%s) VALUES `, name, def.StrJoin(", "))
+	} else {
+		insQ = fmt.Sprintf(`INSERT INTO "%s"."%s" (%s) VALUES `, schema, name, def.StrJoin(", "))
+	}
+
 	qryBuf.WriteString(insQ)
 	pi := 1
 	for i := 0; i < len(rows); i++ {
