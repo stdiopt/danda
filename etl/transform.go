@@ -2,6 +2,7 @@ package etl
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -128,5 +129,33 @@ func Peek[T any](it Iter, fn func(v T)) Iter {
 			return v, err
 		},
 		Close: it.Close,
+	})
+}
+
+func Cat(its ...Iter) Iter {
+	// Copy
+	its = append([]Iter{}, its...)
+	of := its
+	return MakeIter(Custom[any]{
+		Next: func(ctx context.Context) (any, error) {
+			for {
+				v, err := of[0].Next(ctx)
+				if err == EOI {
+					of = of[1:]
+					if len(of) == 0 {
+						return nil, EOI
+					}
+					continue
+				}
+				return v, err
+			}
+		},
+		Close: func() error {
+			var err error
+			for _, it := range its {
+				err = errors.Join(err, it.Close())
+			}
+			return err
+		},
 	})
 }
