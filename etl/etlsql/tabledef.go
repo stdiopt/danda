@@ -114,8 +114,6 @@ func (c ColDef) Zero() any {
 
 // TableDef represents an sql table definition.
 type TableDef struct {
-	// Schema  string // only on supported dbs
-	// Name    string
 	Columns []ColDef
 }
 
@@ -124,21 +122,6 @@ func NewTableDef(cols ...ColDef) TableDef {
 		Columns: append([]ColDef{}, cols...),
 	}
 }
-
-/*func (d TableDef) WithSchemaName(name string) TableDef {
-	return TableDef{
-		Schema:  name,
-		Name:    d.Name,
-		Columns: append([]ColDef{}, d.Columns...),
-	}
-}
-
-func (d TableDef) WithName(name string) TableDef {
-	return TableDef{
-		Name:    name,
-		Columns: append([]ColDef{}, d.Columns...),
-	}
-}*/
 
 type sqlTypeSolver func(*sql.ColumnType) (reflect.Type, error)
 

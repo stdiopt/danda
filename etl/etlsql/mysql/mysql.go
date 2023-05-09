@@ -26,15 +26,23 @@ type mysql struct{}
 func (mysql) String() string { return "mysql" }
 
 func (d mysql) TableDef(ctx context.Context, db etlsql.SQLQuery, dbname, name string) (Table, error) {
+	var row *sql.Row
 	if dbname == "" {
-		dbname = "DATABASE()"
-	}
-	tableQry := `
+		tableQry := `
+			SELECT count(table_name)
+			FROM information_schema.tables
+			WHERE table_schema = DATABASE()
+				AND table_name = ?`
+		row = db.QueryRowContext(ctx, tableQry, name)
+	} else {
+
+		tableQry := `
 			SELECT count(table_name)
 			FROM information_schema.tables
 			WHERE table_schema = ?
 				AND table_name = ?`
-	row := db.QueryRowContext(ctx, tableQry, dbname, name)
+		row = db.QueryRowContext(ctx, tableQry, dbname, name)
+	}
 	var c int
 	if err := row.Scan(&c); err != nil {
 		return Table{}, err
