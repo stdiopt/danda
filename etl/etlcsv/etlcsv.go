@@ -4,6 +4,7 @@ package etlcsv
 import (
 	"context"
 	"encoding/csv"
+	"fmt"
 	"strings"
 
 	"github.com/stdiopt/danda/drow"
@@ -22,7 +23,8 @@ type (
 
 type decodeOptions struct {
 	// Comma is the field delimiter.
-	Comma rune
+	Comma    rune
+	NoHeader bool
 }
 
 type DecodeOptFunc func(*decodeOptions)
@@ -30,6 +32,12 @@ type DecodeOptFunc func(*decodeOptions)
 func WithDecodeComma(c rune) DecodeOptFunc {
 	return func(o *decodeOptions) {
 		o.Comma = c
+	}
+}
+
+func WithNoHeader() DecodeOptFunc {
+	return func(o *decodeOptions) {
+		o.NoHeader = true
 	}
 }
 
@@ -59,6 +67,16 @@ func Decode(it Iter, opts ...DecodeOptFunc) Iter {
 				c, err := cr.Read()
 				if err != nil {
 					return nil, err
+				}
+				// If no header we name columns as col1,col2 and emit a row right away
+				if o.NoHeader {
+					cols = make([]string, len(c))
+					row := make(Row, len(cols))
+					for i, r := range c {
+						cols[i] = fmt.Sprintf("col%d", i+1)
+						row[i] = Field{Name: cols[i], Value: strings.TrimSpace(r)}
+					}
+					return row, nil
 				}
 				cols = c
 			}
