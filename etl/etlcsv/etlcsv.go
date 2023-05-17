@@ -23,8 +23,8 @@ type (
 
 type decodeOptions struct {
 	// Comma is the field delimiter.
-	Comma    rune
-	NoHeader bool
+	Comma  rune
+	Header bool
 }
 
 type DecodeOptFunc func(*decodeOptions)
@@ -35,15 +35,16 @@ func WithDecodeComma(c rune) DecodeOptFunc {
 	}
 }
 
-func WithNoHeader() DecodeOptFunc {
+func WithDecodeHeader(v bool) DecodeOptFunc {
 	return func(o *decodeOptions) {
-		o.NoHeader = true
+		o.Header = v
 	}
 }
 
-func makeOptions(opts ...DecodeOptFunc) decodeOptions {
+func makeDecodeOptions(opts ...DecodeOptFunc) decodeOptions {
 	o := decodeOptions{
-		Comma: ',',
+		Comma:  ',',
+		Header: true,
 	}
 	for _, fn := range opts {
 		fn(&o)
@@ -54,7 +55,7 @@ func makeOptions(opts ...DecodeOptFunc) decodeOptions {
 // Decode returns an iterator that reads danda.Iter based on []byte and produces danda.Row
 // Close will close the underlying iterator.
 func Decode(it Iter, opts ...DecodeOptFunc) Iter {
-	o := makeOptions(opts...)
+	o := makeDecodeOptions(opts...)
 
 	pr := etlio.AsReader(it)
 	var cr *csv.Reader
@@ -69,7 +70,7 @@ func Decode(it Iter, opts ...DecodeOptFunc) Iter {
 					return nil, err
 				}
 				// If no header we name columns as col1,col2 and emit a row right away
-				if o.NoHeader {
+				if !o.Header {
 					cols = make([]string, len(c))
 					row := make(Row, len(cols))
 					for i, r := range c {
