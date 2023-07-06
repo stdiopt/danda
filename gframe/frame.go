@@ -279,6 +279,14 @@ func (f Frame) Map(fn func(Row) Row) Frame {
 	return Frame{series: series}
 }
 
+func (f Frame) Concat(f2 Frame) Frame {
+	var series []Series
+	for _, s := range f2.series {
+		series = append(series, f.SeriesAt(s.Name()).MergeAt(f.Len(), s))
+	}
+	return New(series...)
+}
+
 type FilterFunc func(Row) bool
 
 // Filter iterates over the dataframe if the fn returns true it will forward
@@ -435,7 +443,7 @@ func (f Frame) seriesByName(n string) Series {
 			return s
 		}
 	}
-	return Series{}
+	return Series{name: n}
 }
 
 // AppendRows appends rows to the frame by mapping the row fields into the proper series

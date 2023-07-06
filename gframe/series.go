@@ -148,6 +148,21 @@ func (s Series) WithName(name string) Series {
 	return Series{name: name, provider: s.provider.Clone()}
 }
 
+// MergeAt returns a new series with the values from s2 merged into s at index i
+func (s Series) MergeAt(i int, s2 Series) Series {
+	provider := s.provider
+	if provider == nil {
+		provider = seriesDataFrom(s2.At(0))
+	}
+
+	data := make([]any, s2.Len())
+	for i := 0; i < s2.Len(); i++ {
+		data[i] = s2.At(i)
+	}
+
+	return Series{name: s.name, provider: provider.WithValues(i, data...)}
+}
+
 // Data returns the underlying data slice
 func (s Series) Data() any {
 	if s.provider == nil {
