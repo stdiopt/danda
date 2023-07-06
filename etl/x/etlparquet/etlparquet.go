@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"time"
@@ -58,16 +59,55 @@ func DecodeFile[T any](it Iter) Iter {
 	})
 }
 
+type decodeOptions struct {
+	useTMPFile bool
+}
+
+type decodeOptFunc func(*decodeOptions)
+
+func WithUseTMPFile() decodeOptFunc {
+	return func(o *decodeOptions) {
+		o.useTMPFile = true
+	}
+}
+
+func makeDecodeOptions(opts ...decodeOptFunc) decodeOptions {
+	opt := decodeOptions{
+		useTMPFile: false,
+	}
+	for _, fn := range opts {
+		fn(&opt)
+	}
+	return opt
+}
+
 // Decode decodes and unmarshal []byte from 'iter' into T
-func Decode[T any](it Iter) Iter {
+func Decode[T any](it Iter, opts ...decodeOptFunc) Iter {
+	opt := makeDecodeOptions(opts...)
 	return etl.MakeGen(etl.Gen[T]{
 		Run: func(ctx context.Context, yield etl.Y[T]) error {
-			data, err := etlio.ReadAllContext(ctx, it)
-			if err != nil {
-				return err
+			var dr io.ReadSeeker
+			if opt.useTMPFile {
+				f, err := os.CreateTemp("", "parquet-")
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+				defer os.Remove(f.Name())
+
+				if _, err := io.Copy(f, etlio.AsReader(it)); err != nil {
+					return err
+				}
+				dr = f
+			} else {
+				data, err := etlio.ReadAllContext(ctx, it)
+				if err != nil {
+					return err
+				}
+				dr = bytes.NewReader(data)
 			}
 
-			pr, err := goparquet.NewFileReader(bytes.NewReader(data))
+			pr, err := goparquet.NewFileReader(dr)
 			if err != nil {
 				return err
 			}
