@@ -92,7 +92,7 @@ func Take[T any](it Iter, n int) ([]T, error) {
 	for i := 0; i < n; i++ {
 		v, err := it.Next(ctx)
 		if err != nil {
-			return nil, err
+			return res, err
 		}
 		res = append(res, v.(T))
 	}
