@@ -50,6 +50,26 @@ func Consume[T any](it Iter, fn func(T) error) error {
 	return ConsumeContext(context.Background(), it, fn)
 }
 
+// ConsumeBatch consumes the given iterator in batches of n values.
+func ConsumeBatch[T any](it Iter, n int, fn func([]T) error) error {
+	for {
+		batch, err := Take[T](it, n)
+		if err != nil {
+			if err == EOI {
+				return nil
+			}
+			return err
+		}
+		// Assume no more data if batch is empty.
+		if len(batch) == 0 {
+			return nil
+		}
+		if err := fn(batch); err != nil {
+			return err
+		}
+	}
+}
+
 // Limit returns an iterator that returns at most n values from the given iterator
 // Closing the returned iterator will close the given iterator.
 func Limit(it Iter, n int) Iter {
@@ -65,7 +85,7 @@ func Limit(it Iter, n int) Iter {
 	})
 }
 
-// Take will consume the given iterator and return the first n values as a slice.
+// Take consumes the given iterator and return the first n values as a slice.
 func Take[T any](it Iter, n int) ([]T, error) {
 	ctx := context.Background()
 	var res []T
