@@ -279,6 +279,7 @@ func (f Frame) Map(fn func(Row) Row) Frame {
 	return Frame{series: series}
 }
 
+// Concat concatenates 2 frames.
 func (f Frame) Concat(f2 Frame) Frame {
 	var series []Series
 	for _, s := range f2.series {
@@ -368,7 +369,7 @@ func (f Frame) String() string {
 	for ci := 0; ci < len(f.series); ci++ { // columns
 		s := f.series[ci]
 		colLen[ci] = max(colLen[ci], len(s.Name()))
-		colLen[ci] = max(colLen[ci], len(fmt.Sprintf("%T", s.At(0))))
+		// colLen[ci] = max(colLen[ci], len(fmt.Sprintf("%T", s.At(0))))
 	}
 	for ri := 0; ri < l; ri++ { // rows
 		for ci := 0; ci < len(f.series); ci++ { // columns
@@ -387,13 +388,15 @@ func (f Frame) String() string {
 	fmt.Fprintf(buf, "\n")
 
 	// render Header types
-	for i, s := range f.series {
-		if i != 0 {
-			fmt.Fprint(buf, " | ")
+	/*
+		for i, s := range f.series {
+			if i != 0 {
+				fmt.Fprint(buf, " | ")
+			}
+			fmt.Fprintf(buf, "%-*T", colLen[i], s.At(0))
 		}
-		fmt.Fprintf(buf, "%-*T", colLen[i], s.At(0))
-	}
-	fmt.Fprintf(buf, "\n")
+		fmt.Fprintf(buf, "\n")
+	*/
 
 	// Render line
 	for i := 0; i < len(f.series); i++ {
