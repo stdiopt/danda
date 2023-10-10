@@ -56,6 +56,9 @@ func ConsumeBatch[T any](it Iter, n int, fn func([]T) error) error {
 		batch, err := Take[T](it, n)
 		if err != nil {
 			if err == EOI {
+				if len(batch) > 0 {
+					return fn(batch)
+				}
 				return nil
 			}
 			return err
