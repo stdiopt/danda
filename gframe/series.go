@@ -57,7 +57,7 @@ type Series struct {
 }
 
 func (s Series) GoString() string {
-	return fmt.Sprintf("series(%s) %v", s.name, s.provider)
+	return fmt.Sprintf("series(%s:%T) %v", s.name, s.provider.At(0), s.provider)
 }
 
 // Clone returns a based series.

@@ -17,7 +17,7 @@ func (f Frame) OuterJoin(df Frame, fn joinOnFunc) Frame { return outerJoin(f, df
 // JoinOn is a convinient function to create a joinOnFunc.
 func JoinOn(f1, f2 string) func(r1, r2 Row) bool {
 	return func(r1, r2 Row) bool {
-		return r1.At(f1) == r2.At(f2)
+		return r1.At(f1).Value == r2.At(f2).Value
 	}
 }
 

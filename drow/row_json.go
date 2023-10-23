@@ -83,6 +83,9 @@ func jsonReadValue(dec *json.Decoder, tok json.Token) (any, error) {
 			if err != nil {
 				return arr, err
 			}
+			if len(arr) == 0 {
+				return arr, nil
+			}
 			// Make it a single type, might be expensive
 			typ := reflect.TypeOf(arr[0])
 			for _, a := range arr {
