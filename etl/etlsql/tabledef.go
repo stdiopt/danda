@@ -237,7 +237,7 @@ func (d TableDef) String() string {
 
 func (d TableDef) IndexOf(k string) int {
 	for i, c := range d.Columns {
-		if c.Name == k {
+		if strings.EqualFoled(c.Name, k) {
 			return i
 		}
 	}
