@@ -269,7 +269,7 @@ func (d TableDef) RowValues(rows []Row) []any {
 		for _, c := range d.Columns {
 			f := r.At(equalFold(c.Name))
 			v := f.Value
-			if v == nil {
+			if !c.Nullable && v == nil {
 				v = c.Zero()
 			}
 			params = append(params, v)
