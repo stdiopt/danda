@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/cockroachdb/apd"
@@ -237,7 +238,7 @@ func (d TableDef) String() string {
 
 func (d TableDef) IndexOf(k string) int {
 	for i, c := range d.Columns {
-		if strings.EqualFoled(c.Name, k) {
+		if strings.EqualFold(c.Name, k) {
 			return i
 		}
 	}
