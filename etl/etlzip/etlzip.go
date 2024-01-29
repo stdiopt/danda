@@ -2,7 +2,6 @@
 package etlzip
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -27,7 +26,7 @@ type eachFn[T any] func(Entry, etl.Y[T]) error
 // EachFile consumes a []byte iterator and sends iterators for unziped file
 func EachFile[T any](it Iter, pattern string, fn eachFn[T]) Iter {
 	return etl.MakeGen(etl.Gen[T]{
-		Run: func(_ context.Context, yield etl.Y[T]) error {
+		Run: func(yield etl.Y[T]) error {
 			r := etlio.AsReader(it)
 
 			zs := zipstream.NewReader(r)

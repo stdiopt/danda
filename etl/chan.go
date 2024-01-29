@@ -17,18 +17,18 @@ type msg[T any] struct {
 }
 
 type Gen[T any] struct {
-	Run   func(context.Context, Y[T]) error
+	Run   func(Y[T]) error
 	Close func() error
 }
 
 func MakeGen[T any](g Gen[T]) Iter {
 	ch := make(chan msg[T])
-	ictx, cancel := context.WithCancelCause(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 
 	yield := func(value T) error {
 		select {
-		case <-ictx.Done():
-			return ictx.Err()
+		case <-ctx.Done():
+			return ctx.Err()
 		case ch <- msg[T]{value: value}:
 			return nil
 		}
@@ -36,24 +36,20 @@ func MakeGen[T any](g Gen[T]) Iter {
 
 	go func() {
 		defer close(ch)
-		if err := g.Run(ictx, yield); err != nil {
+		if err := g.Run(yield); err != nil {
 			select {
-			case <-ictx.Done():
+			case <-ctx.Done():
 			case ch <- msg[T]{err: err}:
 			}
 		}
 	}()
 
 	return MakeIter(Custom[T]{
-		Next: func(ctx context.Context) (T, error) {
+		Next: func() (T, error) {
 			var z T
 			select {
 			case <-ctx.Done():
-				cancel(ctx.Err())
-				// do cancel? what if it is closed already?
 				return z, ctx.Err()
-			case <-ictx.Done():
-				return z, ictx.Err()
 			case msg, ok := <-ch:
 				if !ok {
 					return z, io.EOF
@@ -74,18 +70,13 @@ func MakeGen[T any](g Gen[T]) Iter {
 
 func Chan[T any](ch <-chan T) Iter {
 	return MakeIter(Custom[T]{
-		Next: func(ctx context.Context) (T, error) {
+		Next: func() (T, error) {
 			var z T
-			select {
-			case <-ctx.Done():
-				return z, ctx.Err()
-			default:
-				v, ok := <-ch
-				if !ok {
-					return z, io.EOF
-				}
-				return v, nil
+			v, ok := <-ch
+			if !ok {
+				return z, io.EOF
 			}
+			return v, nil
 		},
 	})
 }

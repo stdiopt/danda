@@ -60,7 +60,9 @@ func BlobListObjects(bucketURL string, opts ...ListOptFunc) etl.Iter {
 
 	bIt := b.List(&blob.ListOptions{Prefix: prefix, Delimiter: o.Delimiter})
 	return etl.MakeIter(etl.Custom[*blob.ListObject]{
-		Next: bIt.Next,
+		Next: func() (*blob.ListObject, error) {
+			return bIt.Next(context.Background())
+		},
 		Close: func() error {
 			cancel()
 			return b.Close()
@@ -96,7 +98,7 @@ func BlobGetObject(objURL string) etl.Iter {
 
 	eof := false
 	return etl.MakeIter(etl.Custom[[]byte]{
-		Next: func(ctx context.Context) ([]byte, error) {
+		Next: func() ([]byte, error) {
 			if eof {
 				return nil, etl.EOI
 			}

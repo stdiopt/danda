@@ -2,7 +2,6 @@
 package etlio
 
 import (
-	"context"
 	"fmt"
 	"io"
 
@@ -40,7 +39,7 @@ func FromReadCloser(rd io.ReadCloser, opts ...ReaderOptFunc) Iter {
 	o := makeReaderOptions(opts...)
 	eof := false
 	return etl.MakeIter(etl.Custom[[]byte]{
-		Next: func(context.Context) ([]byte, error) {
+		Next: func() ([]byte, error) {
 			if eof {
 				return nil, etl.EOI
 			}
@@ -93,7 +92,7 @@ type iterReadCloser struct {
 // Read implements io.Reader
 func (r *iterReadCloser) Read(data []byte) (int, error) {
 	if len(r.buf) == 0 {
-		v, err := r.it.Next(context.TODO())
+		v, err := r.it.Next()
 		if err != nil {
 			return 0, err
 		}

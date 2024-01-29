@@ -1,7 +1,6 @@
 package etlcsv
 
 import (
-	"context"
 	"encoding/csv"
 
 	"github.com/stdiopt/danda/drow"
@@ -43,7 +42,7 @@ func makeEncodeOptions(opts ...EncodeOptFunc) encodeOptions {
 func Encode(it etl.Iter) etl.Iter {
 	o := makeEncodeOptions()
 	return etl.MakeGen(etl.Gen[[]byte]{
-		Run: func(_ context.Context, yield etl.Y[[]byte]) error {
+		Run: func(yield etl.Y[[]byte]) error {
 			w := etlio.YieldWriter(yield)
 
 			cw := csv.NewWriter(w)

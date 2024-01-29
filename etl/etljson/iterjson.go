@@ -2,7 +2,6 @@
 package etljson
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 
@@ -18,7 +17,7 @@ type Iter = etl.Iter
 func Decode[T any](it Iter) Iter {
 	dec := json.NewDecoder(etlio.AsReader(it))
 	return etl.MakeIter(etl.Custom[T]{
-		Next: func(context.Context) (T, error) {
+		Next: func() (T, error) {
 			var v T
 			if !dec.More() {
 				return v, io.EOF
@@ -34,8 +33,8 @@ func Decode[T any](it Iter) Iter {
 // Encode encodes encoming data from it and returns an iterator that yields []byte.
 func Encode(it Iter) Iter {
 	return etl.MakeIter(etl.Custom[[]byte]{
-		Next: func(ctx context.Context) ([]byte, error) {
-			v, err := it.Next(ctx)
+		Next: func() ([]byte, error) {
+			v, err := it.Next()
 			if err != nil {
 				return nil, err
 			}

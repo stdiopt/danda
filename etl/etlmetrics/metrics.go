@@ -1,7 +1,6 @@
 package etlmetrics
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"runtime"
@@ -188,8 +187,8 @@ func (m *Metrics) spin() {
 func (m *Metrics) Count(it Iter, name string) Iter {
 	m.create(name)
 	return etl.MakeIter(etl.Custom[any]{
-		Next: func(ctx context.Context) (any, error) {
-			v, err := it.Next(ctx)
+		Next: func() (any, error) {
+			v, err := it.Next()
 			m.add(name, v)
 			return v, err
 		},

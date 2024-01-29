@@ -2,7 +2,6 @@ package etlgzip
 
 import (
 	"compress/gzip"
-	"context"
 	"io"
 
 	"github.com/stdiopt/danda/etl"
@@ -38,7 +37,7 @@ func Gunzip(it etl.Iter, opts ...gunzipOptFunc) etl.Iter {
 	var rd io.Reader
 	eof := false
 	return etl.MakeIter(etl.Custom[[]byte]{
-		Next: func(_ context.Context) ([]byte, error) {
+		Next: func() ([]byte, error) {
 			if eof {
 				return nil, etl.EOI
 			}

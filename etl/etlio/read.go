@@ -1,21 +1,15 @@
 package etlio
 
 import (
-	"context"
 	"errors"
 
 	"github.com/stdiopt/danda/etl"
 )
 
-// ReadAll reads all data from a []byte iterator
 func ReadAll(it Iter) ([]byte, error) {
-	return ReadAllContext(context.Background(), it)
-}
-
-func ReadAllContext(ctx context.Context, it Iter) ([]byte, error) {
 	ret := []byte{}
 	for {
-		b, err := it.Next(ctx)
+		b, err := it.Next()
 		if err == etl.EOI {
 			return ret, nil
 		}

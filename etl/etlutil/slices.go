@@ -1,7 +1,6 @@
 package etlutil
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/stdiopt/danda/etl"
@@ -9,10 +8,10 @@ import (
 
 func Slice[T any](it Iter, n int) Iter {
 	return etl.MakeIter(etl.Custom[[]T]{
-		Next: func(ctx context.Context) ([]T, error) {
+		Next: func() ([]T, error) {
 			var vals []T
 			for i := 0; i < n; i++ {
-				v, err := it.Next(ctx)
+				v, err := it.Next()
 				if err == etl.EOI && len(vals) > 0 {
 					break
 				}
@@ -32,10 +31,10 @@ func Unslice[T any](it Iter) Iter {
 	var cur []T
 	curi := 0
 	return etl.MakeIter(etl.Custom[T]{
-		Next: func(ctx context.Context) (T, error) {
+		Next: func() (T, error) {
 			var z T
 			if curi >= len(cur) {
-				vv, err := it.Next(ctx)
+				vv, err := it.Next()
 				if err != nil {
 					return z, err
 				}

@@ -2,7 +2,6 @@
 package etl
 
 import (
-	"context"
 	"io"
 )
 
@@ -11,7 +10,7 @@ var EOI = io.EOF
 
 // Iter iterator interface.
 type Iter interface {
-	Next(context.Context) (any, error)
+	Next() (any, error)
 	Close() error
 }
 
@@ -21,7 +20,7 @@ type Iter interface {
 //}
 
 type Custom[T any] struct {
-	Next  func(context.Context) (T, error)
+	Next  func() (T, error)
 	Close func() error
 }
 
@@ -34,13 +33,13 @@ func MakeIter[T any](c Custom[T]) Iter {
 
 func NewIter[IT, DT any](
 	start func() (IT, error),
-	next func(context.Context, IT) (DT, error),
+	next func(IT) (DT, error),
 	end func(IT) error,
 ) Iter {
 	var d *IT
 	it := &iter[DT]{
-		nextfn: func(ctx context.Context) (DT, error) {
-			return next(ctx, *d)
+		nextfn: func() (DT, error) {
+			return next(*d)
 		},
 		closefn: func() error {
 			return end(*d)
@@ -49,14 +48,14 @@ func NewIter[IT, DT any](
 
 	if start != nil {
 		tmpfn := it.nextfn
-		it.nextfn = func(ctx context.Context) (DT, error) {
+		it.nextfn = func() (DT, error) {
 			var z DT
 			dd, err := start()
 			if err != nil {
 				return z, err
 			}
 			d = &dd
-			v, err := next(ctx, *d)
+			v, err := next(*d)
 			it.nextfn = tmpfn
 			return v, err
 		}
@@ -66,15 +65,15 @@ func NewIter[IT, DT any](
 }
 
 type iter[T any] struct {
-	nextfn  func(context.Context) (T, error)
+	nextfn  func() (T, error)
 	closefn func() error
 }
 
-func (it *iter[T]) Next(ctx context.Context) (any, error) {
+func (it *iter[T]) Next() (any, error) {
 	if it.nextfn == nil {
 		return nil, EOI
 	}
-	return it.nextfn(ctx)
+	return it.nextfn()
 }
 
 func (it *iter[T]) Close() error {

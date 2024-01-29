@@ -2,6 +2,7 @@ package etlsql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/stdiopt/danda/etl"
@@ -113,8 +114,12 @@ func (d DB) Insert(it Iter, schema, table string, opts ...insertOptFunc) error {
 			}
 			// Override sql type somehow and store it on column
 		}
+		txq, ok := d.q.(SQLBegin)
+		if !ok {
+			return errors.New("etlsql.DB.Insert: driver does not support transactions")
+		}
 
-		tx, err := d.q.Begin()
+		tx, err := txq.Begin()
 		if err != nil {
 			return err
 		}

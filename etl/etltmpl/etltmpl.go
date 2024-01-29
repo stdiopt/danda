@@ -1,7 +1,6 @@
 package etltmpl
 
 import (
-	"context"
 	"fmt"
 	"html/template"
 	"strings"
@@ -51,8 +50,8 @@ func Template(it Iter, t string, opts ...OptFunc) Iter {
 		return etl.ErrIter(err)
 	}
 	return etl.MakeIter(etl.Custom[string]{
-		Next: func(ctx context.Context) (string, error) {
-			v, err := it.Next(ctx)
+		Next: func() (string, error) {
+			v, err := it.Next()
 			if err != nil {
 				return "", err
 			}

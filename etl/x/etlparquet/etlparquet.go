@@ -2,7 +2,6 @@ package etlparquet
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -25,7 +24,7 @@ type (
 
 // DecodeFile receives a string path and outputs T.
 func DecodeFile[T any](it Iter) Iter {
-	return etl.Yield(it, func(p string, yield etl.Y[T]) error {
+	return etl.MapYield(it, func(p string, yield etl.Y[T]) error {
 		defer it.Close()
 		f, err := os.Open(p)
 		if err != nil {
@@ -85,7 +84,7 @@ func makeDecodeOptions(opts ...decodeOptFunc) decodeOptions {
 func Decode[T any](it Iter, opts ...decodeOptFunc) Iter {
 	opt := makeDecodeOptions(opts...)
 	return etl.MakeGen(etl.Gen[T]{
-		Run: func(ctx context.Context, yield etl.Y[T]) error {
+		Run: func(yield etl.Y[T]) error {
 			var dr io.ReadSeeker
 			if opt.useTMPFile {
 				f, err := os.CreateTemp("", "parquet-")
@@ -100,7 +99,7 @@ func Decode[T any](it Iter, opts ...decodeOptFunc) Iter {
 				}
 				dr = f
 			} else {
-				data, err := etlio.ReadAllContext(ctx, it)
+				data, err := etlio.ReadAll(it)
 				if err != nil {
 					return err
 				}
@@ -142,7 +141,7 @@ func Decode[T any](it Iter, opts ...decodeOptFunc) Iter {
 // Encode returns a new iterator that will iterate over encoded parquet []byte
 // data, it creates the schema based on the first received value.
 func Encode(it Iter) Iter {
-	runner := func(ctx context.Context, yield etl.Y[[]byte]) error {
+	runner := func(yield etl.Y[[]byte]) error {
 		var pw *goparquet.FileWriter
 		var fw *floor.Writer
 		defer func() {
@@ -153,7 +152,7 @@ func Encode(it Iter) Iter {
 				pw.Close()
 			}
 		}()
-		return etl.ConsumeContext(ctx, it, func(v any) error {
+		return etl.Consume(it, func(v any) error {
 			if pw == nil {
 				schema, err := schemaFrom(v)
 				if err != nil {

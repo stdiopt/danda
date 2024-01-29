@@ -2,7 +2,6 @@
 package etlmetrics
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"runtime"
@@ -23,7 +22,7 @@ func DebugCount(it Iter, prefix string) Iter {
 	log := log.New(log.Writer(), prefix, log.Flags())
 	units := map[string]int{}
 	return etl.MakeIter(etl.Custom[any]{
-		Next: func(ctx context.Context) (any, error) {
+		Next: func() (any, error) {
 			count++
 			if time.Since(mark) > 5*time.Second {
 				mark = time.Now()
@@ -39,7 +38,7 @@ func DebugCount(it Iter, prefix string) Iter {
 					humanize.Bytes(mem.Alloc),
 				)
 			}
-			v, err := it.Next(ctx)
+			v, err := it.Next()
 			units[fmt.Sprintf("%T", v)]++
 			return v, err
 		},

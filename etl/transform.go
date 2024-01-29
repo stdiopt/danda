@@ -1,7 +1,6 @@
 package etl
 
 import (
-	"context"
 	"errors"
 	"fmt"
 )
@@ -9,10 +8,10 @@ import (
 func FlatMap[Ti, To any](it Iter, fn func(Ti) []To) Iter {
 	var t []To
 	return MakeIter(Custom[To]{
-		Next: func(ctx context.Context) (To, error) {
+		Next: func() (To, error) {
 			if len(t) == 0 {
 				var z To
-				vv, err := it.Next(ctx)
+				vv, err := it.Next()
 				if err != nil {
 					return z, err
 				}
@@ -35,9 +34,9 @@ func FlatMap[Ti, To any](it Iter, fn func(Ti) []To) Iter {
 // iterator using the func fn.
 func Map[Ti, To any](it Iter, fn func(Ti) To) Iter {
 	return MakeIter(Custom[To]{
-		Next: func(ctx context.Context) (To, error) {
+		Next: func() (To, error) {
 			var z To
-			vv, err := it.Next(ctx)
+			vv, err := it.Next()
 			if err != nil {
 				return z, err
 			}
@@ -56,9 +55,9 @@ func Map[Ti, To any](it Iter, fn func(Ti) To) Iter {
 // iterator using the func fn.
 func MapE[Ti, To any](it Iter, fn func(Ti) (To, error)) Iter {
 	return MakeIter(Custom[To]{
-		Next: func(ctx context.Context) (To, error) {
+		Next: func() (To, error) {
 			var z To
-			vv, err := it.Next(ctx)
+			vv, err := it.Next()
 			if err != nil {
 				return z, err
 			}
@@ -79,10 +78,10 @@ type FilterFunc[T any] func(T) bool
 // if fn returns true the value is passed through
 func Filter[T any](it Iter, fn FilterFunc[T]) Iter {
 	return MakeIter(Custom[T]{
-		Next: func(ctx context.Context) (T, error) {
+		Next: func() (T, error) {
 			var z T
 			for {
-				vv, err := it.Next(ctx)
+				vv, err := it.Next()
 				if err != nil {
 					return z, err
 				}
@@ -101,10 +100,10 @@ func Filter[T any](it Iter, fn FilterFunc[T]) Iter {
 
 // Yield returns an iterator that for each consumed value calls a fn passing an
 // yielder,
-func Yield[Ti, To any](it Iter, fn func(Ti, Y[To]) error) Iter {
+func MapYield[Ti, To any](it Iter, fn func(Ti, Y[To]) error) Iter {
 	return MakeGen(Gen[To]{
-		Run: func(ctx context.Context, yield Y[To]) error {
-			return ConsumeContext(ctx, it, func(v Ti) error {
+		Run: func(yield Y[To]) error {
+			return Consume(it, func(v Ti) error {
 				return fn(v, yield)
 			})
 		},
@@ -115,8 +114,8 @@ func Yield[Ti, To any](it Iter, fn func(Ti, Y[To]) error) Iter {
 // Peek calls the func fn each time the Next from the iterator is called
 func Peek[T any](it Iter, fn func(v T)) Iter {
 	return MakeIter(Custom[T]{
-		Next: func(ctx context.Context) (T, error) {
-			vv, err := it.Next(ctx)
+		Next: func() (T, error) {
+			vv, err := it.Next()
 			if err != nil {
 				var z T
 				return z, err
@@ -137,9 +136,9 @@ func Cat(its ...Iter) Iter {
 	its = append([]Iter{}, its...)
 	of := its
 	return MakeIter(Custom[any]{
-		Next: func(ctx context.Context) (any, error) {
+		Next: func() (any, error) {
 			for {
-				v, err := of[0].Next(ctx)
+				v, err := of[0].Next()
 				if err == EOI {
 					of = of[1:]
 					if len(of) == 0 {

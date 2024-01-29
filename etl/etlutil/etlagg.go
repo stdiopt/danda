@@ -1,8 +1,6 @@
 package etlutil
 
 import (
-	"context"
-
 	"github.com/stdiopt/danda/etl"
 	"github.com/stdiopt/danda/util/dagg"
 )
@@ -13,14 +11,14 @@ func Group[T any](it Iter, gfn dagg.GroupFn[T], opts ...dagg.OptFn[T]) Iter {
 	var aggRows []Row
 	curi := 0
 	return etl.MakeIter(etl.Custom[Row]{
-		Next: func(ctx context.Context) (Row, error) {
+		Next: func() (Row, error) {
 			if aggRows == nil {
 				a = &dagg.Agg[T]{}
 				a.GroupBy(gfn)
 				for _, fn := range opts {
 					fn(a)
 				}
-				if err := etl.ConsumeContext(ctx, it, a.Add); err != nil {
+				if err := etl.Consume(it, a.Add); err != nil {
 					return nil, err
 				}
 

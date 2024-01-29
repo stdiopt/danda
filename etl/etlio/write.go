@@ -1,7 +1,6 @@
 package etlio
 
 import (
-	"context"
 	"fmt"
 	"io"
 
@@ -12,7 +11,7 @@ import (
 func WriteTo(it Iter, w io.Writer) error {
 	defer it.Close() // Should not close?!
 	for {
-		v, err := it.Next(context.TODO())
+		v, err := it.Next()
 		if err == etl.EOI {
 			break
 		}

@@ -2,7 +2,6 @@
 package etlcsv
 
 import (
-	"context"
 	"encoding/csv"
 	"fmt"
 	"strings"
@@ -61,7 +60,7 @@ func Decode(it Iter, opts ...DecodeOptFunc) Iter {
 	var cr *csv.Reader
 	var cols []string
 	return etl.MakeIter(etl.Custom[Row]{
-		Next: func(context.Context) (Row, error) {
+		Next: func() (Row, error) {
 			if cr == nil {
 				cr = csv.NewReader(pr)
 				cr.Comma = o.Comma

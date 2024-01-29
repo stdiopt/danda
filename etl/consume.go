@@ -1,28 +1,23 @@
 package etl
 
 import (
-	"context"
 	"fmt"
 	"io"
 )
 
 // Collect collects all iterator values into a slice.
-func CollectContext[T any](ctx context.Context, it Iter) ([]T, error) {
+func Collect[T any](it Iter) ([]T, error) {
 	var xs []T
-	err := ConsumeContext(ctx, it, func(v T) error {
+	err := Consume(it, func(v T) error {
 		xs = append(xs, v)
 		return nil
 	})
 	return xs, err
 }
 
-func Collect[T any](it Iter) ([]T, error) {
-	return CollectContext[T](context.Background(), it)
-}
-
-func ConsumeContext[T any](ctx context.Context, it Iter, fn func(T) error) error {
+func Consume[T any](it Iter, fn func(T) error) error {
 	for {
-		vv, err := it.Next(ctx)
+		vv, err := it.Next()
 		if err == io.EOF {
 			return nil
 		}
@@ -43,11 +38,6 @@ func ConsumeContext[T any](ctx context.Context, it Iter, fn func(T) error) error
 			return err
 		}
 	}
-}
-
-// Consume iterates over the given iterator and calls fn for each value.
-func Consume[T any](it Iter, fn func(T) error) error {
-	return ConsumeContext(context.Background(), it, fn)
 }
 
 // ConsumeBatch consumes the given iterator in batches of n values.
@@ -77,12 +67,12 @@ func ConsumeBatch[T any](it Iter, n int, fn func([]T) error) error {
 // Closing the returned iterator will close the given iterator.
 func Limit(it Iter, n int) Iter {
 	return MakeIter(Custom[any]{
-		Next: func(ctx context.Context) (any, error) {
+		Next: func() (any, error) {
 			if n <= 0 {
 				return nil, io.EOF
 			}
 			n--
-			return it.Next(ctx)
+			return it.Next()
 		},
 		Close: it.Close,
 	})
@@ -90,10 +80,9 @@ func Limit(it Iter, n int) Iter {
 
 // Take consumes the given iterator and return the first n values as a slice.
 func Take[T any](it Iter, n int) ([]T, error) {
-	ctx := context.Background()
 	var res []T
 	for i := 0; i < n; i++ {
-		v, err := it.Next(ctx)
+		v, err := it.Next()
 		if err != nil {
 			return res, err
 		}
@@ -112,10 +101,9 @@ func Print(it Iter) error {
 
 // Count consumes the iterator and return the number of iterations.
 func Count(it Iter) (int, error) {
-	ctx := context.Background()
 	var n int
 	for {
-		_, err := it.Next(ctx)
+		_, err := it.Next()
 		if err == io.EOF {
 			return n, nil
 		}

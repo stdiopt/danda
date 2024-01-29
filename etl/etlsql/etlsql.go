@@ -23,6 +23,10 @@ type SQLExec interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
+type SQLBegin interface {
+	Begin() (*sql.Tx, error)
+}
+
 type Dialect interface {
 	ColumnGoType(ct *sql.ColumnType) (reflect.Type, error)
 	TableDef(ctx context.Context, db SQLQuery, schema, name string) (TableDef, error)
@@ -34,7 +38,6 @@ type Dialect interface {
 type Q interface {
 	SQLQuery
 	SQLExec
-	Begin() (*sql.Tx, error)
 }
 
 type DB struct {
@@ -80,10 +83,10 @@ func (d DB) Query(query string, args ...any) Iter {
 	var rows *sql.Rows
 	var typs []*sql.ColumnType
 	return etl.MakeIter(etl.Custom[Row]{
-		Next: func(ctx context.Context) (Row, error) {
+		Next: func() (Row, error) {
 			if rows == nil {
 				var err error
-				rows, err = d.q.QueryContext(ctx, query, args...)
+				rows, err = d.q.QueryContext(context.Background(), query, args...)
 				if err != nil {
 					return nil, err
 				}

@@ -1,8 +1,6 @@
 package gframe
 
 import (
-	"context"
-
 	"github.com/stdiopt/danda/etl"
 )
 
@@ -13,7 +11,7 @@ type IterFrame struct {
 }
 
 // Next loads and returns true if there is a next value, false otherwise.
-func (it *IterFrame) Next(context.Context) (any, error) {
+func (it *IterFrame) Next() (any, error) {
 	if it.df.err != nil {
 		return nil, it.df.err
 	}

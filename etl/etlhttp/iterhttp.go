@@ -85,7 +85,7 @@ func Get(url string, opts ...GetOptFunc) Iter {
 
 	eof := false
 	return etl.MakeIter(etl.Custom[[]byte]{
-		Next: func(ctx context.Context) ([]byte, error) {
+		Next: func() ([]byte, error) {
 			select {
 			case <-ctx.Done():
 				cancel()

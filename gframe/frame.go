@@ -2,7 +2,6 @@ package gframe
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"strings"
 
@@ -11,7 +10,7 @@ import (
 )
 
 type iterator interface {
-	Next(context.Context) (any, error)
+	Next() (any, error)
 	Close() error
 }
 
@@ -54,7 +53,7 @@ func FromIter(it iterator) Frame {
 	rs := rowFrameBuilder{}
 	for {
 		var row Row
-		vv, err := it.Next(context.TODO())
+		vv, err := it.Next()
 		if err == etl.EOI {
 			break
 		}

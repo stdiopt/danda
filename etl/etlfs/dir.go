@@ -1,7 +1,6 @@
 package etlfs
 
 import (
-	"context"
 	"fmt"
 	"io/fs"
 	"os"
@@ -15,7 +14,7 @@ import (
 // matches pattern.
 func Find(path, pattern string) Iter {
 	return etl.MakeGen(etl.Gen[string]{
-		Run: func(_ context.Context, yield etl.Y[string]) error {
+		Run: func(yield etl.Y[string]) error {
 			return findFiles(os.DirFS("."), path, pattern, yield)
 		},
 	})
@@ -25,7 +24,7 @@ func Find(path, pattern string) Iter {
 // files in path that matches pattern.
 func FindAsDrow(path, pattern string) Iter {
 	return etl.MakeGen(etl.Gen[Row]{
-		Run: func(_ context.Context, yield etl.Y[Row]) error {
+		Run: func(yield etl.Y[Row]) error {
 			return findFiles(os.DirFS("."), path, pattern, func(p string) error {
 				s, err := os.Stat(p)
 				if err != nil {
