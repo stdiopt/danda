@@ -16,7 +16,7 @@ import (
 func Find(path, pattern string) Iter {
 	return etl.MakeGen(etl.Gen[string]{
 		Run: func(_ context.Context, yield etl.Y[string]) error {
-			return findFiles(os.DirFS("."), path, pattern, yield)
+			return findFiles(os.DirFS(path), ".", pattern, yield)
 		},
 	})
 }
@@ -26,13 +26,14 @@ func Find(path, pattern string) Iter {
 func FindAsDrow(path, pattern string) Iter {
 	return etl.MakeGen(etl.Gen[Row]{
 		Run: func(_ context.Context, yield etl.Y[Row]) error {
-			return findFiles(os.DirFS("."), path, pattern, func(p string) error {
-				s, err := os.Stat(p)
+			return findFiles(os.DirFS(path), ".", pattern, func(p string) error {
+				rpath := filepath.Join(path, p)
+				s, err := os.Stat(rpath)
 				if err != nil {
 					return fmt.Errorf("error stat: %q, %w", p, err)
 				}
 				return yield(Row{
-					drow.F("path", p),
+					drow.F("path", rpath),
 					drow.F("size", s.Size()),
 					drow.F("mode", s.Mode()),
 					drow.F("modtime", s.ModTime()),

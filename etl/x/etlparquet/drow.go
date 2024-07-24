@@ -67,6 +67,12 @@ func (u *drowUnmarshaler) UnmarshalParquet(obj interfaces.UnmarshalObject) error
 					break
 				}
 				v = int16(v.(int32))
+			case parquet.ConvertedType_INT_64:
+				if isNil {
+					v = (*int64)(nil)
+					break
+				}
+				v = v.(int64)
 			case parquet.ConvertedType_UINT_16:
 				if isNil {
 					v = (*uint16)(nil)
