@@ -99,9 +99,9 @@ func Filter[T any](it Iter, fn FilterFunc[T]) Iter {
 	})
 }
 
-// Yield returns an iterator that for each consumed value calls a fn passing an
+// MapYield returns an iterator that for each consumed value calls a fn passing an
 // yielder,
-func Yield[Ti, To any](it Iter, fn func(Ti, Y[To]) error) Iter {
+func MapYield[Ti, To any](it Iter, fn func(Ti, Y[To]) error) Iter {
 	return MakeGen(Gen[To]{
 		Run: func(ctx context.Context, yield Y[To]) error {
 			return ConsumeContext(ctx, it, func(v Ti) error {
@@ -132,6 +132,7 @@ func Peek[T any](it Iter, fn func(v T)) Iter {
 	})
 }
 
+// Cat concatenates two or more iterators
 func Cat(its ...Iter) Iter {
 	// Copy
 	its = append([]Iter{}, its...)
@@ -157,5 +158,26 @@ func Cat(its ...Iter) Iter {
 			}
 			return err
 		},
+	})
+}
+
+// Chunk converts incoming values into slices of n values
+func Chunk[T any](it Iter, n int) Iter {
+	return MakeIter(Custom[[]T]{
+		Next: func(ctx context.Context) ([]T, error) {
+			var vals []T
+			for i := 0; i < n; i++ {
+				v, err := it.Next(ctx)
+				if err == EOI && len(vals) > 0 {
+					break
+				}
+				if err != nil {
+					return nil, err
+				}
+				vals = append(vals, v.(T))
+			}
+			return vals, nil
+		},
+		Close: it.Close,
 	})
 }

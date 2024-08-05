@@ -7,24 +7,11 @@ import (
 	"github.com/stdiopt/danda/etl"
 )
 
+// Slice chunks values
+//
+// Deprecated: use etl.Chunk instead
 func Slice[T any](it Iter, n int) Iter {
-	return etl.MakeIter(etl.Custom[[]T]{
-		Next: func(ctx context.Context) ([]T, error) {
-			var vals []T
-			for i := 0; i < n; i++ {
-				v, err := it.Next(ctx)
-				if err == etl.EOI && len(vals) > 0 {
-					break
-				}
-				if err != nil {
-					return nil, err
-				}
-				vals = append(vals, v.(T))
-			}
-			return vals, nil
-		},
-		Close: it.Close,
-	})
+	return etl.Chunk[T](it, n)
 }
 
 // Unslice receives a slice of type T and yields each value.

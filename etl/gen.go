@@ -24,6 +24,29 @@ func Values[T any](vs ...T) Iter {
 	})
 }
 
+// Yield runs fn which yields values to the iterator.
+func Yield[T any](fn func(ctx context.Context, yield Y[T]) error) Iter {
+	done := make(chan struct{})
+	return MakeGen(Gen[T]{
+		Run: func(ctx context.Context, yield Y[T]) error {
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
+			select {
+			case <-done:
+				cancel()
+				return nil
+			default:
+			}
+			return fn(ctx, yield)
+		},
+		Close: func() error {
+			close(done)
+			return nil
+		},
+	})
+}
+
 // Seq iterates over the sequence of integers from start to end.
 func Seq(start, end, step int) Iter {
 	if start > end && step > 0 {

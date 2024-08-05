@@ -25,7 +25,7 @@ type (
 
 // DecodeFile receives a string path and outputs T.
 func DecodeFile[T any](it Iter) Iter {
-	return etl.Yield(it, func(p string, yield etl.Y[T]) error {
+	return etl.MapYield(it, func(p string, yield etl.Y[T]) error {
 		defer it.Close()
 		f, err := os.Open(p)
 		if err != nil {
