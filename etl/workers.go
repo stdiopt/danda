@@ -51,6 +51,19 @@ func Workers[To any](it Iter, workers int, fn func(context.Context, W[To]) error
 	})
 }
 
+// WorkersMap is a convinitent func that calls fn for every consumed value, it will yield the result
+func WorkersMap[Ti, To any](it Iter, workers int, fn func(context.Context, Ti) (To, error)) Iter {
+	return Workers(it, workers, func(ctx context.Context, w W[To]) error {
+		return ConsumeContext(ctx, w, func(v Ti) error {
+			r, err := fn(ctx, v)
+			if err != nil {
+				return err
+			}
+			return w.Yield(r)
+		})
+	})
+}
+
 // WorkersValue is a convinitent func that calls fn for every consumed value, it will yield any value
 // by calling the yield func.
 func WorkersValue[Ti, To any](it Iter, workers int, fn func(context.Context, Ti, Y[To]) error) Iter {
