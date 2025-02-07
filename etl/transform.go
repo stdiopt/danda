@@ -139,17 +139,15 @@ func Cat(its ...Iter) Iter {
 	of := its
 	return MakeIter(Custom[any]{
 		Next: func(ctx context.Context) (any, error) {
-			for {
+			for len(of) > 0 {
 				v, err := of[0].Next(ctx)
 				if err == EOI {
 					of = of[1:]
-					if len(of) == 0 {
-						return nil, EOI
-					}
 					continue
 				}
 				return v, err
 			}
+			return nil, EOI
 		},
 		Close: func() error {
 			var err error
