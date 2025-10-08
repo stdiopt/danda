@@ -4,7 +4,6 @@ package etljson
 import (
 	"context"
 	"encoding/json"
-	"io"
 
 	"github.com/stdiopt/danda/etl"
 	"github.com/stdiopt/danda/etl/etlio"
@@ -20,10 +19,6 @@ func Decode[T any](it Iter) Iter {
 	return etl.MakeIter(etl.Custom[T]{
 		Next: func(context.Context) (T, error) {
 			var v T
-			if !dec.More() {
-				return v, io.EOF
-			}
-
 			err := dec.Decode(&v)
 			return v, err
 		},
