@@ -68,3 +68,41 @@ func Gunzip(it etl.Iter, opts ...gunzipOptFunc) etl.Iter {
 		Close: it.Close,
 	})
 }
+
+type gzipOptions struct {
+	Level int
+}
+
+type gzipOptFunc func(*gzipOptions)
+
+func WithLevel(level int) gzipOptFunc {
+	return func(o *gzipOptions) {
+		o.Level = level
+	}
+}
+
+func makeGzipOptions(opts ...gzipOptFunc) gzipOptions {
+	o := gzipOptions{
+		Level: gzip.DefaultCompression,
+	}
+	for _, fn := range opts {
+		fn(&o)
+	}
+	return o
+}
+
+func Gzip(it etl.Iter, opts ...gzipOptFunc) etl.Iter {
+	o := makeGzipOptions(opts...)
+	return etl.Yield(func(ctx context.Context, yield etl.Y[[]byte]) error {
+		r := etlio.AsReader(it)
+		w := etlio.YieldWriter(yield)
+		gw, err := gzip.NewWriterLevel(w, o.Level)
+		if err != nil {
+			return err
+		}
+		defer gw.Close()
+
+		_, err = io.Copy(gw, r)
+		return err
+	})
+}
